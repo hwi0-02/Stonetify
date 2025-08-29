@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIn
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { getMe, logout } from '../store/slices/authSlice';
-import { fetchUserPlaylists } from '../store/slices/playlistSlice';
+import { fetchMyPlaylists } from '../store/slices/playlistSlice';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
@@ -14,13 +14,13 @@ const ProfileScreen = ({ navigation }) => {
     const { userPlaylists, status } = useSelector((state) => state.playlist);
 
     useEffect(() => {
+        // Ensure user data is available
         if (!user) {
             dispatch(getMe());
         }
-        if (user && user.id) {
-            dispatch(fetchUserPlaylists(user.id));
-        }
-    }, [dispatch, user]);
+        // Fetch user's own playlists
+        dispatch(fetchMyPlaylists());
+    }, [dispatch]);
 
     if (!user) {
         return <View style={styles.centered}><ActivityIndicator size="large" color="#8A2BE2" /></View>;
@@ -29,23 +29,49 @@ const ProfileScreen = ({ navigation }) => {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>Profile</Text>
-                <TouchableOpacity onPress={() => dispatch(logout())}>
-                    <Ionicons name="log-out-outline" size={26} color="#a7a7a7" />
+                <Text style={styles.headerTitle}>프로필</Text>
+                <TouchableOpacity onPress={() => dispatch(logout())} style={styles.logoutButton}>
+                    <Ionicons name="log-out-outline" size={22} color="#b3b3b3" />
                 </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.scrollViewContent}>
+            <ScrollView contentContainerStyle={styles.scrollViewContent} showsVerticalScrollIndicator={false}>
                 <View style={styles.profileInfo}>
-                    <Image source={user.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile} style={styles.profileImage} />
+                    <View style={styles.profileImageContainer}>
+                        <Image 
+                            source={user.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile} 
+                            style={styles.profileImage} 
+                        />
+                        <View style={styles.profileBadge}>
+                            <Ionicons name="person" size={16} color="#1DB954" />
+                        </View>
+                    </View>
                     <Text style={styles.displayName}>{user.display_name}</Text>
+                    <View style={styles.statsContainer}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>{userPlaylists.length}</Text>
+                            <Text style={styles.statLabel}>플레이리스트</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>0</Text>
+                            <Text style={styles.statLabel}>팔로잉</Text>
+                        </View>
+                    </View>
                 </View>
 
-                {/* ❗ 새 플레이리스트 만들기 버튼 추가 */}
-                <TouchableOpacity style={styles.createPlaylistButton} onPress={() => navigation.navigate('CreatePlaylist')}>
-                    <Ionicons name="add" size={24} color="#fff" />
-                    <Text style={styles.createPlaylistText}>새 플레이리스트 만들기</Text>
-                </TouchableOpacity>
+                {/* Action Buttons */}
+                <View style={styles.actionButtonsContainer}>
+                    <TouchableOpacity style={styles.primaryActionButton} onPress={() => navigation.navigate('CreatePlaylist')}>
+                        <Ionicons name="add" size={20} color="#121212" />
+                        <Text style={styles.primaryActionText}>새 플레이리스트</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.secondaryActionButton}>
+                        <Ionicons name="shuffle" size={18} color="#ffffff" />
+                        <Text style={styles.secondaryActionText}>셔플 재생</Text>
+                    </TouchableOpacity>
+                </View>
 
                 <HorizontalPlaylist
                     title="나의 플레이리스트"
@@ -53,42 +79,176 @@ const ProfileScreen = ({ navigation }) => {
                     onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
                 />
                 
-                {/* Liked & Followed sections can be added here */}
-                
             </ScrollView>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#000' },
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000'},
+    container: { 
+        flex: 1, 
+        backgroundColor: '#121212' 
+    },
+    centered: { 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        backgroundColor: '#121212' 
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingTop: 50,
-        paddingBottom: 15,
+        paddingHorizontal: 16,
+        paddingTop: 60,
+        paddingBottom: 20,
+        backgroundColor: '#121212',
     },
-    headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-    profileInfo: { alignItems: 'center', marginVertical: 20 },
-    profileImage: { width: 100, height: 100, borderRadius: 50, marginBottom: 12 },
-    displayName: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-    scrollViewContent: { paddingHorizontal: 15, paddingBottom: 80 },
-    createPlaylistButton: {
+    headerTitle: { 
+        color: '#ffffff', 
+        fontSize: 28, 
+        fontWeight: '700',
+        letterSpacing: -0.5,
+    },
+    logoutButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#282828',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    profileInfo: { 
+        alignItems: 'center', 
+        paddingVertical: 32,
+        paddingHorizontal: 16,
+    },
+    profileImageContainer: {
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        backgroundColor: '#282828',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+        position: 'relative',
+        shadowColor: '#000',
+        shadowOffset: {
+            width: 0,
+            height: 8,
+        },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+        elevation: 12,
+    },
+    profileImage: { 
+        width: 140, 
+        height: 140, 
+        borderRadius: 70,
+    },
+    profileBadge: {
+        position: 'absolute',
+        bottom: 8,
+        right: 8,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#121212',
+        borderWidth: 2,
+        borderColor: '#1DB954',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    displayName: { 
+        color: '#ffffff', 
+        fontSize: 36, 
+        fontWeight: '900',
+        marginBottom: 20,
+        letterSpacing: -1,
+        textAlign: 'center',
+    },
+    statsContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#282828',
-        padding: 15,
-        borderRadius: 8,
-        marginBottom: 30,
+        backgroundColor: '#1a1a1a',
+        borderRadius: 12,
+        paddingVertical: 16,
+        paddingHorizontal: 24,
     },
-    createPlaylistText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: 'bold',
-        marginLeft: 10,
+    statItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    statDivider: {
+        width: 1,
+        height: 24,
+        backgroundColor: '#404040',
+        marginHorizontal: 16,
+    },
+    statNumber: {
+        color: '#ffffff',
+        fontSize: 24,
+        fontWeight: '800',
+        marginBottom: 4,
+    },
+    statLabel: {
+        color: '#b3b3b3',
+        fontSize: 12,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    actionButtonsContainer: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        marginBottom: 32,
+        gap: 12,
+    },
+    primaryActionButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#1DB954',
+        paddingVertical: 14,
+        borderRadius: 28,
+        shadowColor: '#1DB954',
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 8,
+    },
+    primaryActionText: {
+        color: '#121212',
+        fontSize: 14,
+        fontWeight: '700',
+        marginLeft: 8,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    secondaryActionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderColor: '#404040',
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderRadius: 28,
+    },
+    secondaryActionText: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: '600',
+        marginLeft: 8,
+    },
+    scrollViewContent: { 
+        paddingBottom: 100,
+        backgroundColor: '#121212',
     },
 });
 

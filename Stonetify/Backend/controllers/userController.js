@@ -8,13 +8,13 @@ const registerUser = asyncHandler(async (req, res) => {
     const { email, password, display_name } = req.body;
     if (!email || !password || !display_name) {
         res.status(400);
-        throw new Error('Please add all fields');
+        throw new Error('모든 필드를 입력해주세요.');
     }
 
     const userExists = await User.findOne({ where: { email } });
     if (userExists) {
         res.status(400);
-        throw new Error('User already exists');
+        throw new Error('이미 존재하는 사용자입니다.');
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -35,7 +35,7 @@ const registerUser = asyncHandler(async (req, res) => {
         });
     } else {
         res.status(400);
-        throw new Error('Invalid user data');
+        throw new Error('유효하지 않은 사용자 데이터입니다.');
     }
 });
 
@@ -53,7 +53,7 @@ const loginUser = asyncHandler(async (req, res) => {
         });
     } else {
         res.status(400);
-        throw new Error('Invalid credentials');
+        throw new Error('유효하지 않은 자격 증명입니다.');
     }
 });
 
@@ -73,13 +73,13 @@ const followUser = asyncHandler(async (req, res) => {
 
     if (follower_id === following_id) {
         res.status(400);
-        throw new Error("You can't follow yourself");
+        throw new Error("자기 자신을 팔로우할 수 없습니다.");
     }
     
     const alreadyFollowing = await Follow.findOne({ where: { follower_id, following_id } });
     if(alreadyFollowing) {
         res.status(400);
-        throw new Error("Already following this user");
+        throw new Error("이미 팔로우하고 있는 사용자입니다.");
     }
 
     const follow = await Follow.create({ follower_id, following_id });
@@ -94,11 +94,11 @@ const unfollowUser = asyncHandler(async (req, res) => {
     const follow = await Follow.findOne({ where: { follower_id, following_id } });
     if (!follow) {
         res.status(404);
-        throw new Error("You are not following this user");
+        throw new Error("이 사용자를 팔로우하고 있지 않습니다.");
     }
 
     await follow.destroy();
-    res.status(200).json({ message: 'Unfollowed successfully' });
+    res.status(200).json({ message: '성공적으로 언팔로우했습니다.' });
 });
 
 // 팔로워 목록 조회 (신규)
@@ -115,7 +115,7 @@ const getFollowers = asyncHandler(async (req, res) => {
     });
     if(!user) {
         res.status(404);
-        throw new Error('User not found');
+        throw new Error('사용자를 찾을 수 없습니다.');
     }
     res.status(200).json(user.Followers);
 });
@@ -134,7 +134,7 @@ const getFollowing = asyncHandler(async (req, res) => {
     });
     if(!user) {
         res.status(404);
-        throw new Error('User not found');
+        throw new Error('사용자를 찾을 수 없습니다.');
     }
     res.status(200).json(user.Followings);
 });

@@ -68,6 +68,6 @@ const styles = StyleSheet.create({
       alignItems: 'center',
       backgroundColor: '#000',
     },
-  });
+});
 
 export default AppNavigator;

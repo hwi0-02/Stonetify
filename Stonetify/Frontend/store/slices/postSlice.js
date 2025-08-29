@@ -32,7 +32,7 @@ const postSlice = createSlice({
       .addCase(fetchPosts.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload;
-        state.posts = []; // 에러 발생 시에도 빈 배열로 초기화
+        state.posts = []; 
       });
   },
 });

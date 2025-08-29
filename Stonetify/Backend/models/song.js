@@ -7,6 +7,7 @@ module.exports = (sequelize) => {
     title: { type: DataTypes.STRING(255) },
     artist: { type: DataTypes.STRING(255) },
     album: { type: DataTypes.STRING(255) },
+    album_cover_url: { type: DataTypes.STRING(500) },
     preview_url: { type: DataTypes.STRING(500) },
   }, {
     tableName: 'songs',

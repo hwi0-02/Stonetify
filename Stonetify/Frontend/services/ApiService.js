@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ❗반드시 본인의 PC IP 주소로 변경하세요! (e.g., 'http://192.168.1.5:3000/api/')
-const API_URL = 'http://172.16.15.66:5000/api/'; 
+const API_URL = 'http://192.168.219.105:5000/api/'; 
 
 const api = axios.create({
   baseURL: API_URL,
@@ -19,6 +19,20 @@ api.interceptors.request.use(async (config) => {
   return Promise.reject(error);
 });
 
+// 응답 인터셉터: 에러 로깅
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('🚨 API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data
+    });
+    return Promise.reject(error);
+  }
+);
+
 // --- Auth ---
 export const register = (userData) => api.post('users/register', userData).then(res => res.data);
 export const login = (userData) => api.post('users/login', userData).then(res => res.data);
@@ -33,9 +47,14 @@ export const getFollowing = (userId) => api.get(`users/${userId}/following`).the
 
 // --- Playlists ---
 export const createPlaylist = (playlistData) => api.post('playlists', playlistData).then(res => res.data);
-export const getUserPlaylists = (userId) => api.get(`playlists/user/${userId}`).then(res => res.data);
+export const getMyPlaylists = () => api.get('playlists/me').then(res => res.data);
+export const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId}`).then(res => res.data);
 export const getPlaylistById = (playlistId) => api.get(`playlists/${playlistId}`).then(res => res.data);
-export const likePlaylist = (playlistId) => api.post('playlists/like', { playlistId }).then(res => res.data);
+export const updatePlaylist = (playlistId, playlistData) => api.put(`playlists/${playlistId}`, playlistData).then(res => res.data);
+export const deletePlaylist = (playlistId) => api.delete(`playlists/${playlistId}`).then(res => res.data);
+export const addSongToPlaylist = (playlistId, songData) => api.post(`playlists/${playlistId}/songs`, { song: songData }).then(res => res.data);
+export const removeSongFromPlaylist = (playlistId, songId) => api.delete(`playlists/${playlistId}/songs/${songId}`).then(res => res.data);
+export const toggleLikePlaylist = (playlistId) => api.post(`playlists/${playlistId}/like`).then(res => res.data);
 export const getLikedPlaylists = () => api.get('playlists/liked').then(res => res.data);
 
 // --- Posts ---
@@ -45,3 +64,29 @@ export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res =>
 
 // --- Spotify ---
 export const searchTracks = (query) => api.get(`spotify/search?q=${query}`).then(res => res.data);
+
+const apiService = {
+    register,
+    login,
+    getMe,
+    followUser,
+    unfollowUser,
+    getFollowers,
+    getFollowing,
+    createPlaylist,
+    getMyPlaylists,
+    getPlaylistsByUserId,
+    getPlaylistById,
+    updatePlaylist,
+    deletePlaylist,
+    addSongToPlaylist,
+    removeSongFromPlaylist,
+    toggleLikePlaylist,
+    getLikedPlaylists,
+    getPosts,
+    createPost,
+    likePost,
+    searchTracks
+};
+
+export default apiService;

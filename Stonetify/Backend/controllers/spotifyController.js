@@ -69,12 +69,9 @@ const searchTracks = asyncHandler(async (req, res) => {
     const tracks = response.data.tracks.items.map(item => ({
         id: item.id,
         name: item.name,
-        artists: item.artists.map(artist => ({ id: artist.id, name: artist.name })),
-        album: {
-            id: item.album.id,
-            name: item.album.name,
-            images: item.album.images
-        },
+        artists: item.artists.map(artist => artist.name).join(', '),
+        album: item.album.name,
+        album_cover_url: item.album.images.length > 1 ? item.album.images[1].url : (item.album.images.length > 0 ? item.album.images[0].url : null),
         preview_url: item.preview_url
     }));
 

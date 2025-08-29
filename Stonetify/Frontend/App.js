@@ -3,27 +3,25 @@ import { Provider } from 'react-redux';
 import { store } from './store/store';
 import AppNavigator from './navigation/AppNavigator';
 import { StatusBar } from 'expo-status-bar';
-import * as Font from 'expo-font'; // 추가
-import { ActivityIndicator, View, StyleSheet } from 'react-native'; // 추가
-import { Ionicons } from '@expo/vector-icons'; // 추가
+import * as Font from 'expo-font';
+import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function App() {
-  const [fontsLoaded, setFontsLoaded] = useState(false);
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
 
-  async function loadFonts() {
+  async function loadAssetsAsync() {
     await Font.loadAsync({
-      // 필요한 폰트들을 여기에 추가
-      // 예: 'YourCustomFont': require('./assets/fonts/YourCustomFont.ttf'),
-      ...Ionicons.font, // Ionicons 아이콘 폰트 로드
+      ...Ionicons.font,
     });
-    setFontsLoaded(true);
+    setAssetsLoaded(true);
   }
 
   useEffect(() => {
-    loadFonts();
+    loadAssetsAsync();
   }, []);
 
-  if (!fontsLoaded) {
+  if (!assetsLoaded) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#1DB954" />
@@ -34,7 +32,7 @@ export default function App() {
   return (
     <Provider store={store}>
       <AppNavigator />
-      <StatusBar style="light" /> {/* 상태바 글자색 변경 */}
+      <StatusBar style="light" backgroundColor="#121212" />
     </Provider>
   );
 }
@@ -44,6 +42,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212', // 앱의 기본 배경색과 맞춤
+    backgroundColor: '#121212',
   },
 });

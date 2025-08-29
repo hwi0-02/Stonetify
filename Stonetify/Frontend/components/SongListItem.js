@@ -1,23 +1,31 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 
-const SongListItem = ({ song, onPress, onMorePress }) => {
-  const imageUrl = song.album?.images?.[0]?.url;
+const placeholderAlbum = require('../assets/images/placeholder_album.png');
 
+const SongListItem = ({ item, onPress, onAddPress, onRemovePress, showRemoveButton = false }) => {
   return (
-    <TouchableOpacity style={styles.container} onPress={onPress}>
+    <TouchableOpacity style={styles.container} onPress={() => onPress && onPress(item)} disabled={!onPress}>
       <Image 
-        source={imageUrl ? { uri: imageUrl } : require('../assets/images/placeholder_album.png')} 
-        style={styles.albumArt}
+        source={item.album_cover_url ? { uri: item.album_cover_url } : placeholderAlbum}
+        style={styles.albumCover}
       />
       <View style={styles.songInfo}>
-        <Text style={styles.title} numberOfLines={1}>{song.name || song.title}</Text>
-        <Text style={styles.artist} numberOfLines={1}>{song.artists?.map(a => a.name).join(', ') || song.artist}</Text>
+        <Text style={styles.title} numberOfLines={1}>{item.name || item.title}</Text>
+        <Text style={styles.artist} numberOfLines={1}>{item.artists || item.artist}</Text>
       </View>
-      <TouchableOpacity onPress={onMorePress} style={styles.moreButton}>
-        <Ionicons name="ellipsis-vertical" size={24} color="#a7a7a7" />
-      </TouchableOpacity>
+      {showRemoveButton && onRemovePress && (
+        <TouchableOpacity onPress={() => onRemovePress(item)} style={styles.removeButton}>
+          <Ionicons name="close" size={24} color="#ff4444" />
+        </TouchableOpacity>
+      )}
+      {onAddPress && (
+        <TouchableOpacity onPress={() => onAddPress(item)} style={styles.addButton}>
+          <Ionicons name="add" size={28} color="#fff" />
+        </TouchableOpacity>
+      )}
     </TouchableOpacity>
   );
 };
@@ -27,30 +35,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
   },
-  albumArt: {
+  albumCover: {
     width: 50,
     height: 50,
     borderRadius: 4,
-    backgroundColor: '#333',
     marginRight: 15,
   },
   songInfo: {
-    flex: 1,
+    flex: 1, // 차지할 수 있는 모든 공간을 차지하도록 설정
+    justifyContent: 'center',
+    marginRight: 10,
   },
   title: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   artist: {
-    color: '#a7a7a7',
+    color: '#aaa',
     fontSize: 14,
-    marginTop: 4,
+    marginTop: 3,
   },
-  moreButton: {
-    paddingLeft: 15, // 터치 영역 확보
+  addButton: {
+    padding: 5,
+  },
+  removeButton: {
+    padding: 5,
+    marginRight: 10,
   },
 });
 

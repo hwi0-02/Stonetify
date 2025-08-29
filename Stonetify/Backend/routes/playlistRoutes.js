@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const {
+    getMyPlaylists,
     createPlaylist,
     getPlaylistById,
     getPlaylistsByUser,
@@ -9,28 +10,27 @@ const {
     addSongToPlaylist,
     removeSongFromPlaylist,
     likePlaylist,
-    unlikePlaylist,
     getLikedPlaylists,
-    getSongsInPlaylist
 } = require('../controllers/playlistController');
 const { protect } = require('../middleware/authMiddleware');
 
 // @/api/playlists/
 
-// Playlist Like
-router.route('/:id/like')
-  .post(protect, likePlaylist)
-  .delete(protect, unlikePlaylist);
+// 내 플레이리스트 (메인화면)
+router.get('/me', protect, getMyPlaylists);
 
-router.get('/liked', protect, getLikedPlaylists); // 좋아요한 플레이리스트 목록
+// 좋아요한 플레이리스트
+router.get('/liked', protect, getLikedPlaylists);
 
-// Songs in Playlist
+// 플레이리스트 좋아요/취소 토글
+router.post('/:id/like', protect, likePlaylist);
+
+// 플레이리스트 내 노래 추가/삭제
 router.post('/:id/songs', protect, addSongToPlaylist);
-router.get('/:id/songs', getSongsInPlaylist);
 router.delete('/:playlistId/songs/:songId', protect, removeSongFromPlaylist);
 
 
-// Playlist CRUD
+// 개별 플레이리스트 CRUD
 router.post('/', protect, createPlaylist);
 router.get('/user/:userId', getPlaylistsByUser); // 특정 사용자의 플레이리스트 목록
 router.get('/:id', getPlaylistById);
