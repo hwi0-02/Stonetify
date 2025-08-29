@@ -1,111 +1,92 @@
-const db = require('../config/db');
+const { Post, User, Playlist } = require('../models');
+const asyncHandler = require('express-async-handler');
 
-/**
- * 게시물 작성 (플레이리스트 없이도 허용)
- */
-exports.createPost = async (req, res) => {
-  const userId = req.user.id;
-  const { content, playlist_id } = req.body;
+// @desc    Create a post
+// @route   POST /api/posts
+// @access  Private
+const createPost = asyncHandler(async (req, res) => {
+    const { playlist_id, content } = req.body;
+    const user_id = req.user.id;
 
-  if (!content) {
-    return res.status(400).json({ message: '게시물 내용을 입력하세요.' });
-  }
-
-  try {
-    const [result] = await db.query(
-      `INSERT INTO posts (user_id, content, playlist_id)
-       VALUES (?, ?, ?)`,
-      [userId, content, playlist_id || null] // playlist_id 없으면 NULL 저장
-    );
-
-    res.status(201).json({
-      message: '게시물 작성 성공',
-      postId: result.insertId,
-    });
-  } catch (error) {
-    console.error('게시물 작성 실패:', error);
-    res.status(500).json({ message: '게시물 작성 실패' });
-  }
-};
-
-/**
- * 피드 가져오기
- */
-exports.getFeed = async (req, res) => {
-  try {
-    const [rows] = await db.query(
-      `SELECT p.id, p.content, p.playlist_id, p.created_at,
-              u.display_name,
-              (SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id) as likeCount
-       FROM posts p
-       JOIN users u ON p.user_id = u.id
-       ORDER BY p.created_at DESC`
-    );
-    res.json(rows);
-  } catch (error) {
-    console.error('피드 조회 실패:', error);
-    res.status(500).json({ message: '피드 조회 실패' });
-  }
-};
-
-/**
- * 게시물 삭제
- */
-exports.deletePost = async (req, res) => {
-  const userId = req.user.id;
-  const { id } = req.params;
-
-  try {
-    const [result] = await db.query(
-      `DELETE FROM posts WHERE id = ? AND user_id = ?`,
-      [id, userId]
-    );
-
-    if (result.affectedRows === 0) {
-      return res.status(404).json({ message: '게시물을 찾을 수 없거나 권한이 없습니다.' });
+    if (!playlist_id || !content) {
+        res.status(400);
+        throw new Error('Please provide playlist_id and content');
     }
 
-    res.json({ message: '게시물 삭제 성공' });
-  } catch (error) {
-    console.error('게시물 삭제 실패:', error);
-    res.status(500).json({ message: '게시물 삭제 실패' });
-  }
-};
+    const playlist = await Playlist.findOne({ where: { id: playlist_id, user_id } });
+    if (!playlist) {
+        res.status(404);
+        throw new Error('Playlist not found or you do not own this playlist');
+    }
 
-/**
- * 좋아요 추가
- */
-exports.likePost = async (req, res) => {
-  const userId = req.user.id;
-  const { id } = req.params;
+    const post = await Post.create({
+        user_id,
+        playlist_id,
+        content,
+    });
 
-  try {
-    await db.query(
-      `INSERT IGNORE INTO likes (user_id, post_id) VALUES (?, ?)`,
-      [userId, id]
-    );
-    res.json({ message: '좋아요 성공' });
-  } catch (error) {
-    console.error('좋아요 실패:', error);
-    res.status(500).json({ message: '좋아요 실패' });
-  }
-};
+    res.status(201).json(post);
+});
 
-/**
- * 좋아요 취소
- */
-exports.unlikePost = async (req, res) => {
-  const userId = req.user.id;
-  const { id } = req.params;
+// @desc    Get all posts (feed)
+// @route   GET /api/posts
+// @access  Public
+const getPosts = asyncHandler(async (req, res) => {
+    const posts = await Post.findAll({
+        include: [
+            {
+                model: User,
+                as: 'user',
+                attributes: ['id', 'display_name', 'profile_image_url'],
+            },
+            {
+                model: Playlist,
+                as: 'playlist',
+                include: [
+                    {
+                        model: Song,
+                        as: 'songs',
+                        attributes: ['id', 'title', 'artist', 'album'],
+                        through: { attributes: [] },
+                    },
+                ],
+            },
+        ],
+        order: [['created_at', 'DESC']],
+    });
 
-  try {
-    await db.query(
-      `DELETE FROM likes WHERE user_id = ? AND post_id = ?`,
-      [userId, id]
-    );
-    res.json({ message: '좋아요 취소 성공' });
-  } catch (error) {
-    console.error('좋아요 취소 실패:', error);
-    res.status(500).json({ message: '좋아요 취소 실패' });
-  }
+    res.status(200).json(posts);
+});
+
+// @desc    Like a post
+// @route   POST /api/posts/:id/like
+// @access  Private
+const likePost = asyncHandler(async (req, res) => {
+    const { id: postId } = req.params;
+    const { id: userId } = req.user;
+
+    const post = await Post.findByPk(postId);
+    if (!post) {
+        res.status(404);
+        throw new Error('Post not found');
+    }
+
+    const user = await User.findByPk(userId);
+    const hasLiked = await user.hasLikedPost(post);
+
+    if (hasLiked) {
+        // Unlike
+        await user.removeLikedPost(post);
+        res.status(200).json({ message: 'Post unliked' });
+    } else {
+        // Like
+        await user.addLikedPost(post);
+        res.status(200).json({ message: 'Post liked' });
+    }
+});
+
+module.exports = {
+    createPost,
+    getPosts,
+    likePost,
 };

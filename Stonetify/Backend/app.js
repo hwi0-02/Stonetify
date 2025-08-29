@@ -1,28 +1,35 @@
-const express = require('express');
-const cors = require('cors');   // ✅ CORS 패키지 불러오기
-require('dotenv').config();
+// C:\Stonetify\Stonetify\Backend\app.js
 
-const userRoutes = require('./routes/userRoutes');
-const playlistRoutes = require('./routes/playlistRoutes');
-const spotifyRoutes = require('./routes/spotifyRoutes');
-const postRoutes = require('./routes/postRoutes');
+const express = require('express');
+const dotenv = require('dotenv').config();
+const cors = require('cors'); // 1. cors 패키지 불러오기
+const { errorHandler } = require('./middleware/errorMiddleware');
+const db = require('./models');
 
 const app = express();
-const port = 3000;
 
-// ✅ CORS 허용 (모든 요청 허용)
-app.use(cors());
-
-// ✅ 특정 출처만 허용하려면 이렇게 작성
-// app.use(cors({ origin: 'http://localhost:8081' }));
+app.use(cors()); // 2. cors 미들웨어 적용
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
-app.use('/api/users', userRoutes);
-app.use('/api/playlists', playlistRoutes);
-app.use('/api/spotify', spotifyRoutes);
-app.use('/api/posts', postRoutes);
+// Routes
+app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/playlists', require('./routes/playlistRoutes'));
+app.use('/api/posts', require('./routes/postRoutes'));
+app.use('/api/spotify', require('./routes/spotifyRoutes'));
 
-app.listen(port, () => {
-  console.log(`🚀 백엔드 서버가 http://localhost:${port} 에서 실행 중입니다.`);
-});
+// Sequelize Sync
+db.sequelize.sync({ force: false })
+  .then(() => {
+    console.log('Database synced');
+  })
+  .catch((err) => {
+    console.error('Failed to sync db: ' + err.message);
+  });
+
+// Error Handler
+app.use(errorHandler);
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
