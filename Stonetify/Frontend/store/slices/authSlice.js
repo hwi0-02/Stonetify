@@ -1,49 +1,70 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import * as apiService from '../../services/apiService';
+import apiService from '../../services/apiService'; // default import로 변경
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ==================== INITIAL STATE ====================
 
 const initialState = {
   user: null,
   token: null,
-  status: 'idle',
+  status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
   error: null,
 };
 
-// 회원가입
+// ==================== ASYNC THUNKS ====================
+
+// 공통 에러 처리 함수
+const handleAsyncError = (error, defaultMessage) => {
+  return error.response?.data?.message || error.message || defaultMessage;
+};
+
+// 토큰 저장 유틸리티
+const saveToken = async (token) => {
+  if (token) {
+    await AsyncStorage.setItem('token', token);
+  }
+};
+
+// 회원가입 (최적화된 버전)
 export const register = createAsyncThunk('auth/register', async (userData, thunkAPI) => {
   try {
     const data = await apiService.register(userData);
-    await AsyncStorage.setItem('token', data.token);
+    await saveToken(data.token);
     return data;
   } catch (error) {
-    return thunkAPI.rejectWithValue(error.response.data.message || '회원가입에 실패했습니다.');
+    const errorMessage = handleAsyncError(error, '회원가입에 실패했습니다.');
+    return thunkAPI.rejectWithValue(errorMessage);
   }
 });
 
-// 로그인
+// 로그인 (최적화된 버전)
 export const login = createAsyncThunk('auth/login', async (userData, thunkAPI) => {
   try {
     const data = await apiService.login(userData);
-    await AsyncStorage.setItem('token', data.token);
+    await saveToken(data.token);
     return data;
   } catch (error) {
-    return thunkAPI.rejectWithValue(error.response.data.message || '로그인에 실패했습니다.');
+    const errorMessage = handleAsyncError(error, '로그인에 실패했습니다.');
+    return thunkAPI.rejectWithValue(errorMessage);
   }
 });
 
-// 로그아웃
+// 로그아웃 (개선된 버전)
 export const logout = createAsyncThunk('auth/logout', async () => {
-  await AsyncStorage.removeItem('token');
+  await AsyncStorage.multiRemove(['token', 'user']); // 한 번에 여러 항목 제거
 });
 
-// 사용자 정보 조회
+// 사용자 정보 조회 (최적화된 버전)
 export const getMe = createAsyncThunk('auth/getMe', async (_, thunkAPI) => {
     try {
         return await apiService.getMe();
     } catch (error) {
-        return thunkAPI.rejectWithValue('사용자 정보를 가져오는데 실패했습니다.');
+        const errorMessage = handleAsyncError(error, '사용자 정보를 가져오는데 실패했습니다.');
+        return thunkAPI.rejectWithValue(errorMessage);
     }
 });
+
+// ==================== SLICE ====================
 
 const authSlice = createSlice({
   name: 'auth',

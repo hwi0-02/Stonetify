@@ -3,23 +3,59 @@ const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// 회원가입
+// ==================== UTILITIES ====================
+
+// JWT 토큰 생성 유틸리티
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: '30d',
+  });
+};
+
+// 사용자 응답 포맷 (보안을 위해 비밀번호 제외)
+const formatUserResponse = (user) => ({
+  id: user.id,
+  display_name: user.display_name,
+  email: user.email,
+  token: generateToken(user.id),
+});
+
+// 입력 검증 유틸리티
+const validateUserInput = (email, password, display_name = null) => {
+  const errors = [];
+  
+  if (!email) errors.push('이메일을 입력해주세요.');
+  if (!password) errors.push('비밀번호를 입력해주세요.');
+  if (display_name !== null && !display_name) errors.push('사용자명을 입력해주세요.');
+  
+  return errors;
+};
+
+// ==================== CONTROLLERS ====================
+
+// 회원가입 (최적화된 버전)
 const registerUser = asyncHandler(async (req, res) => {
     const { email, password, display_name } = req.body;
-    if (!email || !password || !display_name) {
+    
+    // 입력 검증
+    const validationErrors = validateUserInput(email, password, display_name);
+    if (validationErrors.length > 0) {
         res.status(400);
-        throw new Error('모든 필드를 입력해주세요.');
+        throw new Error(validationErrors.join(' '));
     }
 
+    // 사용자 중복 검사
     const userExists = await User.findOne({ where: { email } });
     if (userExists) {
         res.status(400);
         throw new Error('이미 존재하는 사용자입니다.');
     }
 
+    // 비밀번호 해싱
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // 사용자 생성
     const user = await User.create({
         email,
         password: hashedPassword,
@@ -27,34 +63,39 @@ const registerUser = asyncHandler(async (req, res) => {
     });
 
     if (user) {
-        res.status(201).json({
-            id: user.id,
-            display_name: user.display_name,
-            email: user.email,
-            token: generateToken(user.id),
-        });
+        res.status(201).json(formatUserResponse(user));
     } else {
         res.status(400);
-        throw new Error('유효하지 않은 사용자 데이터입니다.');
+        throw new Error('사용자 생성에 실패했습니다.');
     }
 });
 
-// 로그인
+// 로그인 (최적화된 버전)
 const loginUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
-    const user = await User.findOne({ where: { email } });
-
-    if (user && (await bcrypt.compare(password, user.password))) {
-        res.json({
-            id: user.id,
-            display_name: user.display_name,
-            email: user.email,
-            token: generateToken(user.id),
-        });
-    } else {
+    
+    // 입력 검증
+    const validationErrors = validateUserInput(email, password);
+    if (validationErrors.length > 0) {
         res.status(400);
+        throw new Error(validationErrors.join(' '));
+    }
+    
+    // 사용자 조회
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+        res.status(401);
         throw new Error('유효하지 않은 자격 증명입니다.');
     }
+    
+    // 비밀번호 검증
+    const isPasswordMatch = await bcrypt.compare(password, user.password);
+    if (!isPasswordMatch) {
+        res.status(401);
+        throw new Error('유효하지 않은 자격 증명입니다.');
+    }
+    
+    res.json(formatUserResponse(user));
 });
 
 // 사용자 정보 조회
@@ -139,12 +180,7 @@ const getFollowing = asyncHandler(async (req, res) => {
     res.status(200).json(user.Followings);
 });
 
-
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: '30d',
-    });
-};
+// ==================== EXPORTS ====================
 
 module.exports = {
     registerUser,
