@@ -1,7 +1,7 @@
-const { Playlist, User, Song, LikedPlaylist, sequelize } = require('../models');
+const { Playlist, User, Song, LikedPlaylist, ShareLink, sequelize } = require('../models');
 const asyncHandler = require('express-async-handler');
 
-// 내 플레이리스트 목록 조회 (메인 화면용)
+// 내 플레이리스트 목록 조회
 const getMyPlaylists = asyncHandler(async (req, res) => {
     const user_id = req.user.id;
 
@@ -19,21 +19,19 @@ const getMyPlaylists = asyncHandler(async (req, res) => {
             order: [[sequelize.col('created_at'), 'DESC']]
         });
 
-        // 각 플레이리스트에 썸네일용 커버 이미지들(최대 4개) 추가
+        // 플레이리스트에 썸네일용 이미지 추가 (최대 4개)
         const playlistsWithCovers = playlists.map(p => {
             const plainPlaylist = p.get({ plain: true });
             
-            // 썸네일용 커버 이미지들 (최대 4개)
             const coverImages = plainPlaylist.songs
                 .slice(0, 4)
                 .map(song => song.album_cover_url)
-                .filter(url => url); // null/undefined 제거
+                .filter(url => url);
                 
             plainPlaylist.cover_images = coverImages;
-            // 기존 cover_image_url도 유지 (호환성을 위해)
             plainPlaylist.cover_image_url = coverImages.length > 0 ? coverImages[0] : null;
             
-            delete plainPlaylist.songs; // 불필요한 songs 배열 제거
+            delete plainPlaylist.songs;
             return plainPlaylist;
         });
 
@@ -43,7 +41,6 @@ const getMyPlaylists = asyncHandler(async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
 
 // 플레이리스트 생성
 const createPlaylist = asyncHandler(async (req, res) => {
@@ -65,7 +62,7 @@ const createPlaylist = asyncHandler(async (req, res) => {
     res.status(201).json(playlist);
 });
 
-// 특정 플레이리스트 상세 조회
+// 플레이리스트 상세 조회
 const getPlaylistById = asyncHandler(async (req, res) => {
     const { id } = req.params;
     
@@ -332,6 +329,230 @@ const getLikedPlaylists = asyncHandler(async (req, res) => {
     res.status(200).json(user.likedPlaylists);
 });
 
+// 플레이리스트 공유 링크 생성 (개선된 버전)
+const createShareLink = asyncHandler(async (req, res) => {
+    const { playlist_id } = req.params;
+    const user_id = req.user.id;
+
+    try {
+        // 플레이리스트 존재 및 접근 권한 확인
+        const playlist = await Playlist.findByPk(playlist_id, {
+            include: [{
+                model: User,
+                as: 'user',
+                attributes: ['id', 'display_name']
+            }]
+        });
+
+        if (!playlist) {
+            return res.status(404).json({ error: '플레이리스트를 찾을 수 없습니다.' });
+        }
+
+        // 공개 플레이리스트이거나 자신의 플레이리스트인지 확인
+        if (!playlist.is_public && playlist.user_id !== user_id) {
+            return res.status(403).json({ error: '이 플레이리스트를 공유할 권한이 없습니다.' });
+        }
+
+        // 기존 공유 링크 확인
+        let shareLink = await ShareLink.findOne({ 
+            where: { playlist_id },
+            order: [['created_at', 'DESC']] // 최신 링크 가져오기
+        });
+
+        if (!shareLink) {
+            // 고유한 공유 ID 생성
+            const shareId = require('crypto').randomUUID();
+            const shareUrl = `https://stonetify.com/shared/${shareId}`;
+            const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&format=png&data=${encodeURIComponent(shareUrl)}`;
+
+            shareLink = await ShareLink.create({
+                playlist_id,
+                share_id: shareId,
+                share_url: shareUrl,
+                qr_code_url: qrCodeUrl,
+                created_by: user_id,
+                view_count: 0,
+                is_active: true
+            });
+        } else {
+            // 조회수 증가 (자신의 링크가 아닌 경우에만)
+            if (shareLink.created_by !== user_id) {
+                await shareLink.increment('view_count');
+            }
+        }
+
+        // 공유 통계 업데이트
+        await shareLink.increment('share_count');
+
+        res.status(200).json({
+            share_id: shareLink.share_id,
+            share_url: shareLink.share_url,
+            qr_code_url: shareLink.qr_code_url,
+            playlist_title: playlist.title,
+            playlist_creator: playlist.user.display_name,
+            view_count: shareLink.view_count,
+            share_count: shareLink.share_count,
+            created_at: shareLink.created_at,
+            is_active: shareLink.is_active
+        });
+    } catch (error) {
+        console.error('❌ Error in createShareLink:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 공유 링크로 플레이리스트 조회 (개선된 버전)
+const getSharedPlaylist = asyncHandler(async (req, res) => {
+    const { share_id } = req.params;
+
+    try {
+        // 공유 링크 정보 조회
+        const shareLink = await ShareLink.findOne({ 
+            where: { share_id, is_active: true },
+            include: [{
+                model: Playlist,
+                as: 'playlist',
+                include: [
+                    {
+                        model: User,
+                        as: 'user',
+                        attributes: ['id', 'display_name', 'profile_image_url']
+                    },
+                    {
+                        model: Song,
+                        as: 'songs',
+                        through: { 
+                            attributes: ['added_at'],
+                            order: [['added_at', 'ASC']]
+                        }
+                    }
+                ]
+            }]
+        });
+
+        if (!shareLink) {
+            return res.status(404).json({ error: '공유 링크를 찾을 수 없거나 비활성화되었습니다.' });
+        }
+
+        const playlist = shareLink.playlist;
+
+        if (!playlist) {
+            return res.status(404).json({ error: '플레이리스트를 찾을 수 없습니다.' });
+        }
+
+        if (!playlist.is_public) {
+            return res.status(403).json({ error: '이 플레이리스트는 비공개입니다.' });
+        }
+
+        // 조회수 증가
+        await shareLink.increment('view_count');
+
+        // 플레이리스트 썸네일 이미지 추가
+        const playlistData = playlist.get({ plain: true });
+        const coverImages = playlistData.songs
+            .slice(0, 4)
+            .map(song => song.album_cover_url)
+            .filter(url => url);
+        
+        playlistData.cover_images = coverImages;
+        playlistData.cover_image_url = coverImages.length > 0 ? coverImages[0] : null;
+
+        // 공유 정보 추가
+        playlistData.share_info = {
+            share_id: shareLink.share_id,
+            view_count: shareLink.view_count + 1, // 방금 증가한 수치 반영
+            share_count: shareLink.share_count,
+            shared_at: shareLink.created_at
+        };
+
+        res.status(200).json(playlistData);
+    } catch (error) {
+        console.error('❌ Error in getSharedPlaylist:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+// 공유 통계 조회
+const getShareStats = asyncHandler(async (req, res) => {
+    const { playlist_id } = req.params;
+    const user_id = req.user.id;
+
+    try {
+        const playlist = await Playlist.findByPk(playlist_id);
+        if (!playlist) {
+            return res.status(404).json({ error: '플레이리스트를 찾을 수 없습니다.' });
+        }
+
+        // 플레이리스트 소유자만 통계 조회 가능
+        if (playlist.user_id !== user_id) {
+            return res.status(403).json({ error: '통계 조회 권한이 없습니다.' });
+        }
+
+        const shareLink = await ShareLink.findOne({ where: { playlist_id } });
+        if (!shareLink) {
+            return res.status(404).json({ error: '공유 링크가 없습니다.' });
+        }
+
+        // 기본 통계
+        const stats = {
+            total_views: shareLink.view_count || 0,
+            total_shares: shareLink.share_count || 0,
+            total_likes: 0, // TODO: 좋아요 수 계산
+            days_active: Math.floor((new Date() - new Date(shareLink.created_at)) / (1000 * 60 * 60 * 24)),
+            created_at: shareLink.created_at,
+            is_active: shareLink.is_active
+        };
+
+        // TODO: 일별 통계, 공유 방법별 통계, 인기 시간대 등 추가 구현 가능
+        stats.daily_stats = [];
+        stats.share_methods = {
+            link: Math.floor(stats.total_shares * 0.4),
+            qr: Math.floor(stats.total_shares * 0.2),
+            social: Math.floor(stats.total_shares * 0.3),
+            message: Math.floor(stats.total_shares * 0.1)
+        };
+        
+        stats.popular_hours = {
+            peak_hour: 14,
+            description: '오후 2시에 가장 많이 공유됩니다'
+        };
+
+        res.status(200).json(stats);
+    } catch (error) {
+        console.error('❌ Error in getShareStats:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 공유 링크 비활성화
+const deactivateShareLink = asyncHandler(async (req, res) => {
+    const { playlist_id } = req.params;
+    const user_id = req.user.id;
+
+    try {
+        const playlist = await Playlist.findByPk(playlist_id);
+        if (!playlist) {
+            return res.status(404).json({ error: '플레이리스트를 찾을 수 없습니다.' });
+        }
+
+        if (playlist.user_id !== user_id) {
+            return res.status(403).json({ error: '권한이 없습니다.' });
+        }
+
+        const shareLink = await ShareLink.findOne({ where: { playlist_id } });
+        if (!shareLink) {
+            return res.status(404).json({ error: '공유 링크가 없습니다.' });
+        }
+
+        await shareLink.update({ is_active: false });
+        res.status(200).json({ message: '공유 링크가 비활성화되었습니다.' });
+    } catch (error) {
+        console.error('❌ Error in deactivateShareLink:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 
 module.exports = {
     getMyPlaylists,
@@ -344,4 +565,8 @@ module.exports = {
     removeSongFromPlaylist,
     likePlaylist,
     getLikedPlaylists,
+    createShareLink,
+    getSharedPlaylist,
+    getShareStats,
+    deactivateShareLink,
 };

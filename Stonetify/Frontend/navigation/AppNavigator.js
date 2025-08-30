@@ -20,6 +20,7 @@ const AppNavigator = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // 앱 시작 시 저장된 토큰 확인 및 사용자 정보 로드
     const bootstrapAsync = async () => {
       const userToken = await AsyncStorage.getItem('token');
       if (userToken) {

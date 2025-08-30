@@ -14,11 +14,10 @@ const ProfileScreen = ({ navigation }) => {
     const { userPlaylists, status } = useSelector((state) => state.playlist);
 
     useEffect(() => {
-        // Ensure user data is available
+        // 사용자 정보 및 플레이리스트 로드
         if (!user) {
             dispatch(getMe());
         }
-        // Fetch user's own playlists
         dispatch(fetchMyPlaylists());
     }, [dispatch]);
 
@@ -60,7 +59,6 @@ const ProfileScreen = ({ navigation }) => {
                     </View>
                 </View>
 
-                {/* Action Buttons */}
                 <View style={styles.actionButtonsContainer}>
                     <TouchableOpacity style={styles.primaryActionButton} onPress={() => navigation.navigate('CreatePlaylist')}>
                         <Ionicons name="add" size={20} color="#121212" />
@@ -172,31 +170,35 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         backgroundColor: '#1a1a1a',
         borderRadius: 12,
-        paddingVertical: 16,
-        paddingHorizontal: 24,
+        paddingVertical: 18,
+        paddingHorizontal: 40,
+        minWidth: 280,
     },
     statItem: {
         alignItems: 'center',
         flex: 1,
+        minWidth: 100,
     },
     statDivider: {
         width: 1,
         height: 24,
         backgroundColor: '#404040',
-        marginHorizontal: 16,
+        marginHorizontal: 24,
     },
     statNumber: {
         color: '#ffffff',
         fontSize: 24,
         fontWeight: '800',
-        marginBottom: 4,
+        marginBottom: 6,
     },
     statLabel: {
         color: '#b3b3b3',
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: '600',
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.3,
+        textAlign: 'center',
+        lineHeight: 16,
     },
     actionButtonsContainer: {
         flexDirection: 'row',

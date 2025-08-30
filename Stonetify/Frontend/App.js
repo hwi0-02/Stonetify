@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 export default function App() {
   const [assetsLoaded, setAssetsLoaded] = useState(false);
 
+  // 앱 시작 시 필요한 폰트 로드
   async function loadAssetsAsync() {
     await Font.loadAsync({
       ...Ionicons.font,
@@ -21,6 +22,7 @@ export default function App() {
     loadAssetsAsync();
   }, []);
 
+  // 폰트 로딩 중일 때 로딩 화면 표시
   if (!assetsLoaded) {
     return (
       <View style={styles.loadingContainer}>

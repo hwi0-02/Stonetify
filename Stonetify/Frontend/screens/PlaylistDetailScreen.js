@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share } from 'react-native';
 import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchPlaylistDetails, updatePlaylist, deletePlaylist } from '../store/slices/playlistSlice';
+import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync } from '../store/slices/playlistSlice';
 import { playTrack } from '../store/slices/playerSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,6 +46,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [isLiked, setIsLiked] = useState(false);
 
   useEffect(() => {
     if (playlistId) {
@@ -58,6 +59,8 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     if (currentPlaylist) {
       setEditTitle(currentPlaylist.title || '');
       setEditDescription(currentPlaylist.description || '');
+      // 좋아요 상태 초기화 (실제로는 API에서 받아와야 함)
+      setIsLiked(currentPlaylist.isLiked || false);
     }
   }, [currentPlaylist]);
 
@@ -150,6 +153,34 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     );
   };
 
+  // 좋아요 토글 핸들러
+  const handleToggleLike = async () => {
+    try {
+      const result = await dispatch(toggleLikePlaylist(currentPlaylist.id));
+      if (result.payload) {
+        setIsLiked(result.payload.liked);
+      }
+    } catch (error) {
+      Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
+    }
+  };
+
+  // 공유 핸들러
+  const handleShare = async () => {
+    try {
+      const result = await dispatch(createShareLinkAsync(currentPlaylist.id));
+      if (result.payload) {
+        const shareUrl = result.payload.share_url;
+        await Share.share({
+          message: `Stonetify에서 "${currentPlaylist.title}" 플레이리스트를 확인해보세요!\n${shareUrl}`,
+          url: shareUrl,
+        });
+      }
+    } catch (error) {
+      Alert.alert('오류', '공유 링크 생성 중 문제가 발생했습니다.');
+    }
+  };
+
   // 현재 사용자가 플레이리스트 소유자인지 확인
   const isOwner = currentPlaylist && user && currentPlaylist.user_id === user.id;
 
@@ -178,6 +209,16 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
             <Ionicons name="ellipsis-horizontal" size={24} color="white" />
           </TouchableOpacity>
         )}
+        
+        {/* 좋아요 버튼 */}
+        <TouchableOpacity style={styles.likeButton} onPress={handleToggleLike}>
+          <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#1DB954" : "white"} />
+        </TouchableOpacity>
+        
+        {/* 공유 버튼 */}
+        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+          <Ionicons name="share-outline" size={24} color="white" />
+        </TouchableOpacity>
         
         {/* 재생 버튼 */}
         {currentPlaylist.songs && currentPlaylist.songs.length > 0 && (
@@ -520,6 +561,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  likeButton: {
+    marginRight: 16,
+  },
+  shareButton: {
+    marginRight: 16,
   },
 });
 

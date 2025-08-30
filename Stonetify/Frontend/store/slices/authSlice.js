@@ -5,11 +5,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const initialState = {
   user: null,
   token: null,
-  status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
+  status: 'idle',
   error: null,
 };
 
-// Async Thunks
+// 회원가입
 export const register = createAsyncThunk('auth/register', async (userData, thunkAPI) => {
   try {
     const data = await apiService.register(userData);
@@ -20,6 +20,7 @@ export const register = createAsyncThunk('auth/register', async (userData, thunk
   }
 });
 
+// 로그인
 export const login = createAsyncThunk('auth/login', async (userData, thunkAPI) => {
   try {
     const data = await apiService.login(userData);
@@ -30,10 +31,12 @@ export const login = createAsyncThunk('auth/login', async (userData, thunkAPI) =
   }
 });
 
+// 로그아웃
 export const logout = createAsyncThunk('auth/logout', async () => {
   await AsyncStorage.removeItem('token');
 });
 
+// 사용자 정보 조회
 export const getMe = createAsyncThunk('auth/getMe', async (_, thunkAPI) => {
     try {
         return await apiService.getMe();
@@ -41,7 +44,6 @@ export const getMe = createAsyncThunk('auth/getMe', async (_, thunkAPI) => {
         return thunkAPI.rejectWithValue('사용자 정보를 가져오는데 실패했습니다.');
     }
 });
-
 
 const authSlice = createSlice({
   name: 'auth',
@@ -54,7 +56,6 @@ const authSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // Register
       .addCase(register.pending, (state) => {
         state.status = 'loading';
       })
@@ -67,7 +68,6 @@ const authSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
-      // Login
       .addCase(login.pending, (state) => {
         state.status = 'loading';
       })
@@ -80,12 +80,10 @@ const authSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
-      // Logout
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.token = null;
       })
-      // Get Me
       .addCase(getMe.fulfilled, (state, action) => {
         state.user = action.payload;
       });

@@ -1,14 +1,14 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ❗반드시 본인의 PC IP 주소로 변경하세요! (e.g., 'http://192.168.1.5:3000/api/')
+// API 기본 URL 설정 (개발 환경에 맞게 IP 주소 변경 필요)
 const API_URL = 'http://192.168.219.105:5000/api/'; 
 
 const api = axios.create({
   baseURL: API_URL,
 });
 
-// 요청 인터셉터: 모든 요청에 토큰을 추가
+// 요청 시 토큰 자동 추가
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem('token');
   if (token) {
@@ -19,7 +19,7 @@ api.interceptors.request.use(async (config) => {
   return Promise.reject(error);
 });
 
-// 응답 인터셉터: 에러 로깅
+// API 에러 로깅
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -33,19 +33,18 @@ api.interceptors.response.use(
   }
 );
 
-// --- Auth ---
+// 인증 관련 API
 export const register = (userData) => api.post('users/register', userData).then(res => res.data);
 export const login = (userData) => api.post('users/login', userData).then(res => res.data);
 export const getMe = () => api.get('users/me').then(res => res.data);
 
-// --- User ---
+// 사용자 관련 API
 export const followUser = (following_id) => api.post('users/follow', { following_id }).then(res => res.data);
 export const unfollowUser = (following_id) => api.delete('users/unfollow', { data: { following_id } }).then(res => res.data);
 export const getFollowers = (userId) => api.get(`users/${userId}/followers`).then(res => res.data);
 export const getFollowing = (userId) => api.get(`users/${userId}/following`).then(res => res.data);
 
-
-// --- Playlists ---
+// 플레이리스트 관련 API
 export const createPlaylist = (playlistData) => api.post('playlists', playlistData).then(res => res.data);
 export const getMyPlaylists = () => api.get('playlists/me').then(res => res.data);
 export const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId}`).then(res => res.data);
@@ -57,6 +56,13 @@ export const removeSongFromPlaylist = (playlistId, songId) => api.delete(`playli
 export const toggleLikePlaylist = (playlistId) => api.post(`playlists/${playlistId}/like`).then(res => res.data);
 export const getLikedPlaylists = () => api.get('playlists/liked').then(res => res.data);
 
+// 공유 관련 API (개선된 버전)
+export const createShareLink = (playlistId) => api.post(`playlists/${playlistId}/share`).then(res => res.data);
+export const getSharedPlaylist = (shareId) => api.get(`playlists/shared/${shareId}`).then(res => res.data);
+export const getShareStats = (playlistId) => api.get(`playlists/${playlistId}/share/stats`).then(res => res.data);
+export const deactivateShareLink = (playlistId) => api.delete(`playlists/${playlistId}/share`).then(res => res.data);
+export const updateShareSettings = (playlistId, settings) => api.put(`playlists/${playlistId}/share/settings`, settings).then(res => res.data);
+
 // --- Posts ---
 export const getPosts = () => api.get('posts').then(res => res.data);
 export const createPost = (postData) => api.post('posts', postData).then(res => res.data);
@@ -64,6 +70,11 @@ export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res =>
 
 // --- Spotify ---
 export const searchTracks = (query) => api.get(`spotify/search?q=${query}`).then(res => res.data);
+
+// --- Recommendations ---
+export const getRecommendedPlaylists = () => api.get('recommendations/playlists').then(res => res.data);
+export const getSimilarUsers = () => api.get('recommendations/users').then(res => res.data);
+export const getTrendingPlaylists = () => api.get('recommendations/trending').then(res => res.data);
 
 const apiService = {
     register,
@@ -83,10 +94,18 @@ const apiService = {
     removeSongFromPlaylist,
     toggleLikePlaylist,
     getLikedPlaylists,
+    createShareLink,
+    getSharedPlaylist,
+    getShareStats,
+    deactivateShareLink,
+    updateShareSettings,
     getPosts,
     createPost,
     likePost,
-    searchTracks
+    searchTracks,
+    getRecommendedPlaylists,
+    getSimilarUsers,
+    getTrendingPlaylists,
 };
 
 export default apiService;

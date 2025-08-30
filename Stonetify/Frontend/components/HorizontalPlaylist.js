@@ -24,6 +24,7 @@ const HorizontalPlaylist = ({ title, data, onPlaylistPress, onItemPress, onSeeAl
           <PlaylistCard 
             playlist={item} 
             onPress={() => handlePress && handlePress(item)} 
+            showActions={false}
           />
         )}
         horizontal

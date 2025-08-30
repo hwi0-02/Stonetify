@@ -5,9 +5,10 @@ import { useNavigation, useRoute } from '@react-navigation/native'; // ❗ useRo
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/apiService';
 import SongListItem from '../components/SongListItem';
-import { debounce } from 'lodash';
+import debounce from 'lodash.debounce';
 import { playTrack } from '../store/slices/playerSlice';
-import { fetchMyPlaylists, createPlaylist } from '../store/slices/playlistSlice'; // ❗ createPlaylist 추가
+import { fetchMyPlaylists, createPlaylist } from '../store/slices/playlistSlice';
+import { loadSearchHistory, saveSearchTerm, addRecentSearch } from '../store/slices/searchSlice';
 
 const SearchScreen = () => {
   const dispatch = useDispatch();
@@ -17,6 +18,7 @@ const SearchScreen = () => {
   const { isCreatingPlaylist, playlistTitle, playlistDescription } = route.params || {}; // ❗ 파라미터 가져오기
 
   const { userPlaylists, status: playlistStatus } = useSelector((state) => state.playlist);
+  const { history, popularSearches } = useSelector((state) => state.search);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -28,6 +30,7 @@ const SearchScreen = () => {
 
   useEffect(() => {
     dispatch(fetchMyPlaylists());
+    dispatch(loadSearchHistory());
   }, [dispatch]);
 
   const search = async (searchQuery) => {

@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { Audio } from 'expo-av';
+import { Audio } from 'expo-audio';
 
 let playbackInstance = null;
 
@@ -8,6 +8,11 @@ const initialState = {
   isPlaying: false,
   status: 'idle', // idle | loading | playing | paused | stopped | error
   error: null,
+  volume: 1.0,
+  position: 0,
+  duration: 0,
+  isRepeat: false,
+  isShuffle: false,
 };
 
 export const playTrack = createAsyncThunk(
@@ -89,6 +94,34 @@ export const stopTrack = createAsyncThunk(
   }
 );
 
+// 볼륨 설정
+export const setVolume = createAsyncThunk(
+  'player/setVolume',
+  async (volume, { rejectWithValue }) => {
+    if (!playbackInstance) return rejectWithValue('재생 중인 곡이 없습니다.');
+    try {
+      await playbackInstance.setVolumeAsync(volume);
+      return volume;
+    } catch (error) {
+      return rejectWithValue('볼륨 설정에 실패했습니다.');
+    }
+  }
+);
+
+// 재생 위치 설정
+export const setPosition = createAsyncThunk(
+  'player/setPosition',
+  async (position, { rejectWithValue }) => {
+    if (!playbackInstance) return rejectWithValue('재생 중인 곡이 없습니다.');
+    try {
+      await playbackInstance.setPositionAsync(position);
+      return position;
+    } catch (error) {
+      return rejectWithValue('재생 위치 설정에 실패했습니다.');
+    }
+  }
+);
+
 const playerSlice = createSlice({
   name: 'player',
   initialState,
@@ -103,6 +136,18 @@ const playerSlice = createSlice({
     setPaused: (state) => {
         state.status = 'paused';
         state.isPlaying = false;
+    },
+    toggleRepeat: (state) => {
+        state.isRepeat = !state.isRepeat;
+    },
+    toggleShuffle: (state) => {
+        state.isShuffle = !state.isShuffle;
+    },
+    updatePosition: (state, action) => {
+        state.position = action.payload;
+    },
+    updateDuration: (state, action) => {
+        state.duration = action.payload;
     },
   },
   extraReducers: (builder) => {

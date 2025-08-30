@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
     width: isWeb ? 110 : (isMobile ? 120 : 115),
     height: isWeb ? 100 : (isMobile ? 100 : 100),
     top: isWeb ? 10 : (isMobile ? 15 : 8),
-    resizeMode: 'contain',
+    contentFit: 'contain',
     marginLeft: -5,
   },
   greeting: {

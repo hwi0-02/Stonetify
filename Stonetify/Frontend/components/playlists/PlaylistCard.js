@@ -1,13 +1,15 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { useDispatch, useSelector } from 'react-redux';
+import { toggleLikePlaylist } from '../../store/slices/playlistSlice';
+import ShareModal from './ShareModal';
 
-// 4개 이미지 격자를 렌더링하는 컴포넌트
-const PlaylistThumbnail = ({ coverImages }) => {
+// 플레이리스트 썸네일 (2x2 이미지 격자)
+const PlaylistThumbnail = ({ coverImages, isLiked, onLikePress }) => {
   const placeholderUrl = 'https://via.placeholder.com/150/1a1a1a/1DB954?text=♪';
   
-  // 4개의 이미지 슬롯 준비 (부족한 경우 placeholder로 채움)
   const imageSlots = Array(4).fill(null).map((_, index) => {
     return coverImages[index] || placeholderUrl;
   });
@@ -22,21 +24,57 @@ const PlaylistThumbnail = ({ coverImages }) => {
         <Image source={{ uri: imageSlots[2] }} style={styles.gridImage} />
         <Image source={{ uri: imageSlots[3] }} style={styles.gridImage} />
       </View>
+      <TouchableOpacity style={styles.thumbnailHeartButton} onPress={onLikePress}>
+        <Ionicons 
+          name={isLiked ? "heart" : "heart-outline"} 
+          size={20} 
+          color={isLiked ? "#1DB954" : "#ffffff"} 
+        />
+      </TouchableOpacity>
     </View>
   );
 };
 
-// Spotify 스타일 플레이리스트 카드 컴포넌트
-const PlaylistCard = ({ playlist, onPress }) => {
+// 플레이리스트 카드 컴포넌트
+const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
+  const dispatch = useDispatch();
+  const { user } = useSelector((state) => state.auth);
+  const { likedPlaylists } = useSelector((state) => state.playlist);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
   const coverImages = playlist.cover_images || [];
+  
+  const isLiked = likedPlaylists.some(p => p.id === playlist.id);
+
+  const handleLike = async () => {
+    try {
+      await dispatch(toggleLikePlaylist(playlist.id));
+    } catch (error) {
+      Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
+    }
+  };
+
+  const handleShare = () => {
+    setShareModalVisible(true);
+  };
 
   return (
     <TouchableOpacity style={styles.cardContainer} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.imageContainer}>
-        <PlaylistThumbnail coverImages={coverImages} />
+        <PlaylistThumbnail 
+          coverImages={coverImages} 
+          isLiked={isLiked}
+          onLikePress={handleLike}
+        />
         <View style={styles.playButton}>
           <Ionicons name="play" size={20} color="#121212" />
         </View>
+        {showActions && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
+              <Ionicons name="share-outline" size={20} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
       <View style={styles.infoContainer}>
         <Text style={styles.title} numberOfLines={2}>{playlist.title}</Text>
@@ -47,6 +85,12 @@ const PlaylistCard = ({ playlist, onPress }) => {
           <Text style={styles.creator}>By {playlist.user.display_name}</Text>
         )}
       </View>
+      
+      <ShareModal 
+        visible={shareModalVisible}
+        onClose={() => setShareModalVisible(false)}
+        playlist={playlist}
+      />
     </TouchableOpacity>
   );
 };
@@ -134,6 +178,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  actionButtons: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  thumbnailHeartButton: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
 

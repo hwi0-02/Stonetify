@@ -11,6 +11,10 @@ const {
     removeSongFromPlaylist,
     likePlaylist,
     getLikedPlaylists,
+    createShareLink,
+    getSharedPlaylist,
+    getShareStats,
+    deactivateShareLink,
 } = require('../controllers/playlistController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -29,6 +33,14 @@ router.post('/:id/like', protect, likePlaylist);
 router.post('/:id/songs', protect, addSongToPlaylist);
 router.delete('/:playlistId/songs/:songId', protect, removeSongFromPlaylist);
 
+
+// 플레이리스트 공유 관련 라우트 (개선된 버전)
+router.post('/:playlist_id/share', protect, createShareLink);
+router.get('/:playlist_id/share/stats', protect, getShareStats);
+router.delete('/:playlist_id/share', protect, deactivateShareLink);
+
+// 공유 링크로 플레이리스트 조회 (인증 불필요)
+router.get('/shared/:share_id', getSharedPlaylist);
 
 // 개별 플레이리스트 CRUD
 router.post('/', protect, createPlaylist);

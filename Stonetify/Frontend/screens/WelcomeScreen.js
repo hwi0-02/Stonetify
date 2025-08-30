@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
     logo: {
         width: 120,
         height: 120,
-        resizeMode: 'contain',
+        contentFit: 'contain',
     },
     title: {
         fontSize: 48,

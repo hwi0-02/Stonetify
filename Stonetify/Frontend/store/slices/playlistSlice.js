@@ -186,8 +186,90 @@ const playlistSlice = createSlice({
       .addCase(deletePlaylist.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload;
+      })
+      .addCase(toggleLikePlaylist.fulfilled, (state, action) => {
+        const { playlistId, liked } = action.payload;
+        // 현재 플레이리스트의 좋아요 상태 업데이트
+        if (state.currentPlaylist && state.currentPlaylist.id === playlistId) {
+          state.currentPlaylist.liked = liked;
+        }
+        // 사용자 플레이리스트 목록에서도 업데이트
+        const index = state.userPlaylists.findIndex(p => p.id === playlistId);
+        if (index !== -1) {
+          state.userPlaylists[index].liked = liked;
+        }
+        // 좋아요한 플레이리스트 목록 업데이트
+        if (liked) {
+          // 좋아요 추가
+          const playlist = state.userPlaylists.find(p => p.id === playlistId);
+          if (playlist && !state.likedPlaylists.find(p => p.id === playlistId)) {
+            state.likedPlaylists.push(playlist);
+          }
+        } else {
+          // 좋아요 제거
+          state.likedPlaylists = state.likedPlaylists.filter(p => p.id !== playlistId);
+        }
+      })
+      .addCase(toggleLikePlaylist.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload;
+      })
+      .addCase(createShareLinkAsync.fulfilled, (state, action) => {
+        // 공유 링크 생성 성공 시 특별한 상태 업데이트는 필요 없음
+        // 필요시 공유 링크를 state에 저장할 수 있음
+      })
+      .addCase(createShareLinkAsync.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload;
+      })
+      .addCase(fetchSharedPlaylist.fulfilled, (state, action) => {
+        state.currentPlaylist = action.payload;
+        state.status = 'succeeded';
+      })
+      .addCase(fetchSharedPlaylist.rejected, (state, action) => {
+        state.status = 'failed';
+        state.error = action.payload;
       });
   },
 });
+
+// 플레이리스트 공유 링크 생성
+export const createShareLinkAsync = createAsyncThunk(
+  'playlist/createShareLink',
+  async (playlistId, thunkAPI) => {
+    try {
+      const result = await apiService.createShareLink(playlistId);
+      return result;
+    } catch (error) {
+      return thunkAPI.rejectWithValue('공유 링크 생성에 실패했습니다.');
+    }
+  }
+);
+
+// 공유 링크로 플레이리스트 조회
+export const fetchSharedPlaylist = createAsyncThunk(
+  'playlist/fetchSharedPlaylist',
+  async (playlistId, thunkAPI) => {
+    try {
+      const result = await apiService.getSharedPlaylist(playlistId);
+      return result;
+    } catch (error) {
+      return thunkAPI.rejectWithValue('공유 플레이리스트를 불러오는데 실패했습니다.');
+    }
+  }
+);
+
+// 플레이리스트 좋아요 토글
+export const toggleLikePlaylist = createAsyncThunk(
+  'playlist/toggleLikePlaylist',
+  async (playlistId, thunkAPI) => {
+    try {
+      const result = await apiService.toggleLikePlaylist(playlistId);
+      return { playlistId, liked: result.liked };
+    } catch (error) {
+      return thunkAPI.rejectWithValue('좋아요 처리에 실패했습니다.');
+    }
+  }
+);
 
 export default playlistSlice.reducer;
