@@ -184,6 +184,11 @@ export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res =>
 // Spotify Integration APIs
 export const searchTracks = (query) => api.get(`spotify/search?q=${encodeURIComponent(query)}`).then(res => res.data);
 
+// Song Like APIs
+export const toggleLikeSong = (songIdOrSpotifyId, songPayload) =>
+  api.post(`playlists/songs/${encodeURIComponent(songIdOrSpotifyId)}/like`, songPayload ? { song: songPayload } : undefined).then(res => res.data);
+export const getMyLikedSongs = () => api.get('playlists/songs/liked/me').then(res => res.data);
+
 // Recommendation APIs
 export const getRecommendedPlaylists = () => api.get('recommendations/playlists').then(res => res.data);
 export const getSimilarUsers = () => api.get('recommendations/users').then(res => res.data);
@@ -236,6 +241,8 @@ const apiService = {
   
   // Spotify
   searchTracks,
+  toggleLikeSong,
+  getMyLikedSongs,
   
   // Recommendations
   getRecommendedPlaylists,

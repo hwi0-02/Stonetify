@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, FlatList, TouchableOpacity, Modal, Alert, ActivityIndicator } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
+import { fetchLikedSongs, toggleLikeSongThunk, toggleLocal as toggleLikedLocal } from '../store/slices/likedSongsSlice';
 import { useNavigation, useRoute } from '@react-navigation/native'; // ❗ useRoute 추가
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/apiService';
@@ -23,6 +24,9 @@ const SearchScreen = () => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showLiked, setShowLiked] = useState(false);
+  const [likedSongs, setLikedSongs] = useState([]);
+  const likedMapGlobal = useSelector(state => state.likedSongs.map);
   
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedSong, setSelectedSong] = useState(null);
@@ -31,7 +35,25 @@ const SearchScreen = () => {
   useEffect(() => {
     dispatch(fetchMyPlaylists());
     dispatch(loadSearchHistory());
+    dispatch(fetchLikedSongs());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (showLiked) {
+      (async () => {
+        try {
+          setLoading(true);
+          const data = await apiService.getMyLikedSongs();
+          setLikedSongs(Array.isArray(data) ? data : []);
+          // 글로벌 likedSongs는 slice에서 관리되므로 화면용 목록만 유지
+        } catch (e) {
+          Alert.alert('오류', '좋아요한 곡을 불러오는데 실패했습니다.');
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }
+  }, [showLiked]);
 
   const search = async (searchQuery) => {
     if (!searchQuery) {
@@ -59,6 +81,10 @@ const SearchScreen = () => {
   const openPlaylistModal = async (song) => {
     setSelectedSong(song);
     setModalVisible(true);
+  };
+
+  const toggleShowLiked = () => {
+    setShowLiked((v) => !v);
   };
 
   const handleAddSongToPlaylist = async (playlistId) => {
@@ -113,33 +139,43 @@ const SearchScreen = () => {
     }
   };
 
-  // Update header button when in playlist creation mode
+  // Update header buttons: save button and liked toggle
   useLayoutEffect(() => {
-    if (isCreatingPlaylist && newlyCreatedPlaylistId) {
-      navigation.setOptions({
-        headerRight: () => (
-          <TouchableOpacity onPress={handleSavePlaylist} style={styles.saveNavButton}>
-            <Text style={styles.saveNavButtonText}>저장</Text>
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {isCreatingPlaylist && newlyCreatedPlaylistId ? (
+            <TouchableOpacity onPress={handleSavePlaylist} style={styles.saveNavButton}>
+              <Text style={styles.saveNavButtonText}>저장</Text>
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity onPress={toggleShowLiked} style={styles.likedToggleButton}>
+            <Ionicons name={showLiked ? 'heart' : 'heart-outline'} size={20} color="#1DB954" />
+            <Text style={styles.likedToggleText}>{showLiked ? '좋아요' : '좋아요'}</Text>
           </TouchableOpacity>
-        ),
-      });
-    } else {
-      navigation.setOptions({ headerRight: null });
-    }
-  }, [navigation, isCreatingPlaylist, newlyCreatedPlaylistId]);
+        </View>
+      ),
+    });
+  }, [navigation, isCreatingPlaylist, newlyCreatedPlaylistId, showLiked]);
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>음악 검색</Text>
-          {isCreatingPlaylist && newlyCreatedPlaylistId && (
-            <TouchableOpacity 
-              style={styles.saveButton} 
-              onPress={handleSavePlaylist}
-            >
-              <Text style={styles.saveButtonText}>저장</Text>
+          <View style={styles.headerActions}>
+            {isCreatingPlaylist && newlyCreatedPlaylistId ? (
+              <TouchableOpacity 
+                style={styles.saveButton} 
+                onPress={handleSavePlaylist}
+              >
+                <Text style={styles.saveButtonText}>저장</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={toggleShowLiked} style={[styles.likedToggleButton, { marginLeft: 8 }]}>
+              <Ionicons name={showLiked ? 'heart' : 'heart-outline'} size={18} color="#1DB954" />
+              <Text style={styles.likedToggleText}>좋아요한 곡</Text>
             </TouchableOpacity>
-          )}
+          </View>
         </View>
         {isCreatingPlaylist && (
           <View style={styles.playlistInfo}>
@@ -169,21 +205,55 @@ const SearchScreen = () => {
         </View>
       </View>
 
-      {loading && results.length === 0 ? (
+      {loading && (showLiked ? likedSongs.length === 0 : results.length === 0) ? (
         <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#fff" />
       ) : (
         <FlatList
-          data={results}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <SongListItem 
-              item={item} 
-              onPress={handlePlayTrack} 
-              onAddPress={openPlaylistModal} 
-            />
-          )}
+          data={showLiked ? likedSongs : results}
+          keyExtractor={(item, idx) => (item.id || item.spotify_id || idx).toString()}
+          renderItem={({ item }) => {
+            const trackKey = item.spotify_id || item.id || null;
+            const isLiked = trackKey ? !!likedMapGlobal[trackKey] : false;
+            return (
+              <SongListItem 
+                item={item} 
+                onPress={handlePlayTrack} 
+                onAddPress={openPlaylistModal} 
+                showLikeButton
+                liked={isLiked}
+                onLikePress={async (song) => {
+                  const sKey = song.spotify_id || song.id || null;
+                  if (!sKey) {
+                    Alert.alert('오류', '이 곡에는 유효한 식별자가 없어 좋아요를 처리할 수 없습니다.');
+                    return;
+                  }
+                  const curr = !!likedMapGlobal[sKey];
+                  // optimistic local: dispatch local toggle to update global map/list
+                  dispatch(toggleLikedLocal({ ...song, id: song.id, spotify_id: song.spotify_id }));
+                  try {
+                    await dispatch(toggleLikeSongThunk({ ...song, id: song.id, spotify_id: song.spotify_id })).unwrap();
+                    if (showLiked && curr) {
+                      // removing from liked list
+                      setLikedSongs((list) => list.filter(s => (s.id || s.spotify_id) !== sKey));
+                    } else if (showLiked && !curr) {
+                      // adding to liked list from liked view (rare), append
+                      setLikedSongs((list) => [{ ...song, liked_at: Date.now() }, ...list]);
+                    }
+                  } catch (e) {
+                    // rollback: toggle back
+                    dispatch(toggleLikedLocal({ ...song, id: song.id, spotify_id: song.spotify_id }));
+                    Alert.alert('오류', '좋아요 처리에 실패했습니다.');
+                  }
+                }}
+              />
+            );
+          }}
           ListEmptyComponent={() => (
-            !loading && query.length > 0 && <Text style={styles.emptyText}>검색 결과가 없습니다.</Text>
+            !loading && (
+              showLiked
+                ? <Text style={styles.emptyText}>좋아요한 곡이 없습니다.</Text>
+                : (query.length > 0 && <Text style={styles.emptyText}>검색 결과가 없습니다.</Text>)
+            )
           )}
         />
       )}
@@ -248,11 +318,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerTitle: { 
     color: '#ffffff', 
     fontSize: 28, 
     fontWeight: '800',
     letterSpacing: -0.8,
+  },
+  saveNavButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#1DB954',
+    marginRight: 8,
+  },
+  saveNavButtonText: {
+    color: '#121212',
+    fontWeight: '800',
+  },
+  likedToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(29,185,84,0.1)',
+    borderColor: '#1DB954',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  likedToggleText: {
+    color: '#1DB954',
+    fontWeight: '700',
+    marginLeft: 6,
   },
   playlistInfo: {
     backgroundColor: '#1a1a1a',

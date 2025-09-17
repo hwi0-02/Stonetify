@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const placeholderAlbum = require('../assets/images/placeholder_album.png');
 
-const SongListItem = ({ item, onPress, onAddPress, onRemovePress, showRemoveButton = false }) => {
+const SongListItem = ({ item, onPress, onAddPress, onRemovePress, showRemoveButton = false, showLikeButton = false, onLikePress, liked = false }) => {
   return (
     <TouchableOpacity style={styles.container} onPress={() => onPress && onPress(item)} disabled={!onPress}>
       <Image 
@@ -16,6 +16,11 @@ const SongListItem = ({ item, onPress, onAddPress, onRemovePress, showRemoveButt
         <Text style={styles.title} numberOfLines={1}>{item.name || item.title}</Text>
         <Text style={styles.artist} numberOfLines={1}>{item.artists || item.artist}</Text>
       </View>
+      {showLikeButton && (
+        <TouchableOpacity onPress={() => onLikePress && onLikePress(item)} style={styles.likeButton}>
+          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={22} color={liked ? '#1DB954' : '#fff'} />
+        </TouchableOpacity>
+      )}
       {showRemoveButton && onRemovePress && (
         <TouchableOpacity onPress={() => onRemovePress(item)} style={styles.removeButton}>
           <Ionicons name="trash-outline" size={20} color="#ff4444" />
@@ -71,6 +76,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ff4444',
   },
+  likeButton: {
+    padding: 6,
+    marginRight: 8,
+  }
 });
 
 export default SongListItem;

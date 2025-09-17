@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync } from '../store/slices/playlistSlice';
+import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists } from '../store/slices/playlistSlice';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -46,7 +46,7 @@ const PlaylistHeaderImage = ({ songs }) => {
 const PlaylistDetailScreen = ({ route, navigation }) => {
   const dispatch = useDispatch();
   const { playlistId } = route.params;
-  const { currentPlaylist, status } = useSelector((state) => state.playlist);
+  const { currentPlaylist, status, likedPlaylists } = useSelector((state) => state.playlist);
   const { user } = useSelector((state) => state.auth);
   
   const [menuVisible, setMenuVisible] = useState(false);
@@ -54,10 +54,12 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [isLiked, setIsLiked] = useState(false);
+  const [songLikes, setSongLikes] = useState({});
 
   useEffect(() => {
     if (playlistId) {
       dispatch(fetchPlaylistDetails(playlistId));
+      dispatch(fetchLikedPlaylists());
     }
   }, [dispatch, playlistId]);
 
@@ -65,9 +67,27 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     if (currentPlaylist) {
       setEditTitle(currentPlaylist.title || '');
       setEditDescription(currentPlaylist.description || '');
-      setIsLiked(currentPlaylist.liked || false);
+  const liked = !!(likedPlaylists || []).find(p => p.id === currentPlaylist.id) || currentPlaylist.liked || false;
+  setIsLiked(liked);
+      (async () => {
+        try {
+          const likes = await ApiService.getMyLikedSongs();
+          const likedMap = {};
+          for (const l of likes || []) {
+            likedMap[l.song_id] = true;
+          }
+          const map = {};
+          for (const s of currentPlaylist.songs || []) {
+            const key = s.id || s.spotify_id;
+            map[key] = likedMap[s.id] || likedMap[key] || false;
+          }
+          setSongLikes(map);
+        } catch (e) {
+          setSongLikes({});
+        }
+      })();
     }
-  }, [currentPlaylist]);
+  }, [currentPlaylist, likedPlaylists]);
   
   const handleEditPlaylist = () => {
     setMenuVisible(false);
@@ -210,6 +230,19 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
     }
   };
+
+  const handleToggleSongLike = async (song) => {
+    const key = song.id || song.spotify_id;
+    const prev = !!songLikes[key];
+    setSongLikes((s) => ({ ...s, [key]: !prev }));
+    try {
+      await ApiService.toggleLikeSong(key);
+    } catch (e) {
+      setSongLikes((s) => ({ ...s, [key]: prev }));
+      const msg = e?.message || '곡 좋아요 처리 중 오류가 발생했습니다.';
+      if (Platform.OS === 'web') alert(msg); else Alert.alert('오류', msg);
+    }
+  };
   
   const handleShare = async () => {
     try {
@@ -313,6 +346,9 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
               onPress={() => handlePlayTrack(item)}
               showRemoveButton={isOwner}
               onRemovePress={handleRemoveSong}
+              showLikeButton
+              onLikePress={handleToggleSongLike}
+              liked={!!songLikes[item?.id || item?.spotify_id]}
             />
           );
         }}

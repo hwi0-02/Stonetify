@@ -10,6 +10,7 @@ const Follow = require('./follows');
 const RecentView = require('./recent_views');
 const Recommendation = require('./recommendations');
 const ShareLink = require('./share_links');
+const SongLike = require('./song_likes');
 
 module.exports = {
   User,
@@ -23,4 +24,5 @@ module.exports = {
   RecentView,
   Recommendation,
   ShareLink
+  ,SongLike
 };

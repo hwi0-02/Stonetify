@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchPosts } from '../store/slices/postSlice';
-import { fetchMyPlaylists } from '../store/slices/playlistSlice';
+import { fetchMyPlaylists, fetchLikedPlaylists } from '../store/slices/playlistSlice';
 import PostItem from '../components/home/PostItem';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
 
@@ -31,6 +31,7 @@ const HomeScreen = ({ navigation }) => {
   useEffect(() => {
     dispatch(fetchPosts());
     dispatch(fetchMyPlaylists());
+    dispatch(fetchLikedPlaylists());
   }, [dispatch]);
 
   const handlePlaylistPress = (playlist) => {

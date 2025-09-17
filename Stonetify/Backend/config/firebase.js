@@ -32,6 +32,7 @@ const COLLECTIONS = {
   SONGS: 'songs',
   PLAYLIST_SONGS: 'playlist_songs',
   LIKED_PLAYLISTS: 'liked_playlists',
+  SONG_LIKES: 'song_likes',
   POSTS: 'posts',
   POST_LIKES: 'post_likes',
   FOLLOWS: 'follows',

@@ -1,4 +1,4 @@
-const { Playlist, User, Song, PlaylistSongs, LikedPlaylist, ShareLink } = require('../models');
+const { Playlist, User, Song, PlaylistSongs, LikedPlaylist, ShareLink, SongLike } = require('../models');
 const asyncHandler = require('express-async-handler');
 
 // 내 플레이리스트 목록 조회
@@ -530,4 +530,56 @@ module.exports = {
     getSharedPlaylist,
     getShareStats,
     deactivateShareLink,
+    // song likes
+    toggleLikeSong: asyncHandler(async (req, res) => {
+        const { songId } = req.params;
+        const payloadSong = req.body?.song;
+        // songId may be internal or spotify_id -> resolve to internal id
+        const key = songId || payloadSong?.spotify_id || payloadSong?.id;
+        let song = key ? await Song.findById(key) : null;
+        if (!song && key) song = await Song.findBySpotifyId(key);
+        if (!song && payloadSong) {
+            const normalized = {
+                spotify_id: payloadSong.spotify_id || payloadSong.id || songId,
+                title: payloadSong.title || payloadSong.name,
+                artist: payloadSong.artist || payloadSong.artists,
+                album: payloadSong.album || '',
+                album_cover_url: payloadSong.album_cover_url || payloadSong.albumCoverUrl || null,
+                preview_url: payloadSong.preview_url || null,
+                duration_ms: payloadSong.duration_ms || null,
+                external_urls: payloadSong.external_urls || payloadSong.external_url || null,
+            };
+            song = await Song.findOrCreate(normalized);
+        }
+        if (!song) {
+            res.status(404);
+            throw new Error('곡을 찾을 수 없습니다.');
+        }
+        const result = await SongLike.toggle(req.user.id, song.id);
+        res.status(200).json(result);
+    }),
+    getMyLikedSongs: asyncHandler(async (req, res) => {
+        const likes = await SongLike.findByUserId(req.user.id);
+        const songs = [];
+        for (const like of likes) {
+            const s = await Song.findById(like.song_id);
+            if (s) {
+                songs.push({
+                    id: s.id,
+                    spotify_id: s.spotify_id,
+                    name: s.title || s.name,
+                    artists: s.artist,
+                    album: s.album,
+                    album_cover_url: s.album_cover_url,
+                    preview_url: s.preview_url,
+                    duration_ms: s.duration_ms,
+                    external_urls: s.external_urls,
+                    liked_at: like.liked_at,
+                });
+            }
+        }
+        // 최신 좋아요 순으로 정렬
+        songs.sort((a, b) => (b.liked_at || 0) - (a.liked_at || 0));
+        res.status(200).json(songs);
+    }),
 };
