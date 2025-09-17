@@ -105,13 +105,50 @@ const SearchScreen = () => {
     }
   };
 
+  // 플레이리스트 생성 완료 함수
+  const handleSavePlaylist = () => {
+    if (newlyCreatedPlaylistId) {
+      Alert.alert(
+        '플레이리스트 생성 완료',
+        `'${playlistTitle}' 플레이리스트가 성공적으로 생성되었습니다.`,
+        [
+          {
+            text: '확인',
+            onPress: () => {
+              // 메인 페이지로 이동
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'MainTab' }],
+              });
+            }
+          }
+        ]
+      );
+    } else {
+      Alert.alert('오류', '플레이리스트를 먼저 생성해주세요.');
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>음악 검색</Text>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>음악 검색</Text>
+          {isCreatingPlaylist && newlyCreatedPlaylistId && (
+            <TouchableOpacity 
+              style={styles.saveButton} 
+              onPress={handleSavePlaylist}
+            >
+              <Text style={styles.saveButtonText}>저장</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         {isCreatingPlaylist && (
           <View style={styles.playlistInfo}>
-            <Text style={styles.playlistTitle}>{playlistTitle}</Text>
+            <Text style={styles.playlistTitle}>'{playlistTitle}' 생성 중...</Text>
+            {newlyCreatedPlaylistId && (
+              <Text style={styles.playlistSubtext}>곡을 추가한 후 저장 버튼을 눌러주세요</Text>
+            )}
           </View>
         )}
       </View>
@@ -207,23 +244,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: '#121212',
   },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   headerTitle: { 
     color: '#ffffff', 
     fontSize: 28, 
     fontWeight: '800',
     letterSpacing: -0.8,
-    marginBottom: 8,
   },
   playlistInfo: {
     backgroundColor: '#1a1a1a',
+    padding: 12,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
+    marginTop: 8,
   },
   playlistTitle: {
-    color: '#1DB954',
-    fontSize: 12,
+    color: '#1db954',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  playlistSubtext: {
+    color: '#6a6a6a',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  saveButton: {
+    backgroundColor: '#1db954',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 60,
+    alignItems: 'center',
+    shadowColor: '#1db954',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  saveButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: '600',
   },
   searchContainer: {

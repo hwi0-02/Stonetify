@@ -5,7 +5,8 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { errorHandler } = require('./middleware/errorMiddleware');
-const db = require('./models');
+// Firebase 초기화
+const { db } = require('./config/firebase');
 
 const app = express();
 
@@ -46,14 +47,8 @@ app.use('/api/posts', require('./routes/postRoutes'));
 app.use('/api/spotify', require('./routes/spotifyRoutes'));
 app.use('/api/recommendations', require('./routes/recommendationRoutes'));
 
-// 데이터베이스 동기화
-db.sequelize.sync({ force: false })
-  .then(() => {
-    console.log('Database synced');
-  })
-  .catch((err) => {
-    console.error('Failed to sync db: ' + err.message);
-  });
+// Firebase 연결 확인
+console.log('🔥 Firebase Realtime Database 연결됨');
 
 app.use(errorHandler);
 

@@ -1,4 +1,4 @@
-const { User, Follow } = require('../models');
+    const { User, Follow } = require('../models');
 const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -33,38 +33,187 @@ const validateUserInput = (email, password, display_name = null) => {
 
 // ==================== CONTROLLERS ====================
 
+// 임시: 사용자 데이터 조회 함수 (디버깅용)
+const getUserData = asyncHandler(async (req, res) => {
+    const { email } = req.params;
+    
+    console.log('🔍 사용자 데이터 조회:', email);
+    
+    try {
+        const user = await User.findByEmail(email);
+        if (!user) {
+            res.status(404);
+            throw new Error('사용자를 찾을 수 없습니다.');
+        }
+        
+        console.log('📋 사용자 데이터:', {
+            id: user.id,
+            email: user.email,
+            display_name: user.display_name,
+            password_exists: !!user.password,
+            password_length: user.password ? user.password.length : 0,
+            password_starts_with: user.password ? user.password.substring(0, 10) + '...' : 'null'
+        });
+        
+        res.json({
+            id: user.id,
+            email: user.email,
+            display_name: user.display_name,
+            password_exists: !!user.password,
+            password_length: user.password ? user.password.length : 0,
+            created_at: user.created_at
+        });
+    } catch (error) {
+        console.error('❌ 사용자 데이터 조회 실패:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 임시: 기존 해시 검증 함수 (개발용)
+const verifyExistingHash = asyncHandler(async (req, res) => {
+    const bcrypt = require('bcryptjs');
+    
+    const password = "1111";
+    const existingHash = "$2b$10$rQDfj/cKBXoDVE8Qp5XjeOtEB.I0fb1qBYufvgKb0FqGZYLwXKsH6";
+    
+    console.log('🔍 기존 해시 검증 테스트');
+    console.log('비밀번호:', password);
+    console.log('기존 해시:', existingHash);
+    
+    const isMatch = await bcrypt.compare(password, existingHash);
+    console.log('기존 해시와 매치 결과:', isMatch);
+    
+    // 다른 가능한 비밀번호들도 테스트해보기
+    const testPasswords = ["1111", "test", "password", "홍길동", "admin"];
+    const results = {};
+    
+    for (const testPwd of testPasswords) {
+        const match = await bcrypt.compare(testPwd, existingHash);
+        results[testPwd] = match;
+        console.log(`"${testPwd}" 매치 결과:`, match);
+    }
+    
+    res.json({
+        password,
+        existingHash,
+        isMatch,
+        testResults: results
+    });
+});
+
+// 임시: 비밀번호 해시 테스트 함수 (개발용)
+const testPasswordHash = asyncHandler(async (req, res) => {
+    const bcrypt = require('bcryptjs');
+    
+    console.log('🔧 비밀번호 해시 테스트 시작');
+    
+    const password = "1111";
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    
+    console.log('원본 비밀번호:', password);
+    console.log('새 해시:', hashedPassword);
+    
+    // 해시 검증 테스트
+    const isMatch = await bcrypt.compare(password, hashedPassword);
+    console.log('해시 검증 결과:', isMatch);
+    
+    res.json({
+        password,
+        hashedPassword,
+        isMatch
+    });
+});
+
+// 임시: 비밀번호 재설정 함수 (개발용)
+const resetPasswordForEmail = asyncHandler(async (req, res) => {
+    const { email, newPassword } = req.body;
+    
+    console.log('🔧 비밀번호 재설정 요청:', { email, newPassword });
+    
+    if (!email || !newPassword) {
+        res.status(400);
+        throw new Error('이메일과 새 비밀번호를 입력해주세요.');
+    }
+    
+    // 사용자 조회
+    const user = await User.findByEmail(email);
+    if (!user) {
+        res.status(404);
+        throw new Error('사용자를 찾을 수 없습니다.');
+    }
+    
+    console.log('🔍 기존 사용자 정보:', { id: user.id, email: user.email });
+    
+    // 비밀번호 해싱
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    console.log('🔒 새 비밀번호 해시:', hashedPassword);
+    
+    // 해시 검증 테스트
+    const testMatch = await bcrypt.compare(newPassword, hashedPassword);
+    console.log('🧪 해시 검증 테스트:', testMatch);
+    
+    // 새 비밀번호로 업데이트 (User.update는 자동으로 해싱하므로 직접 Firebase를 사용)
+    const { RealtimeDBHelpers, COLLECTIONS } = require('../config/firebase');
+    await RealtimeDBHelpers.updateDocument(COLLECTIONS.USERS, user.id, {
+        password: hashedPassword,
+        updated_at: Date.now()
+    });
+    
+    console.log('✅ 비밀번호 재설정 완료');
+    res.json({ 
+        message: '비밀번호가 성공적으로 재설정되었습니다.',
+        newHash: hashedPassword
+    });
+});
+
+// ==================== CONTROLLERS ====================
+
 // 회원가입 (최적화된 버전)
 const registerUser = asyncHandler(async (req, res) => {
     const { email, password, display_name } = req.body;
     
+    console.log('🔐 회원가입 요청:', { email, display_name });
+    
     // 입력 검증
     const validationErrors = validateUserInput(email, password, display_name);
     if (validationErrors.length > 0) {
+        console.log('❌ 입력 검증 실패:', validationErrors);
         res.status(400);
         throw new Error(validationErrors.join(' '));
     }
 
     // 사용자 중복 검사
-    const userExists = await User.findOne({ where: { email } });
+    console.log('🔍 사용자 중복 검사...');
+    const userExists = await User.findByEmail(email);
     if (userExists) {
+        console.log('❌ 이미 존재하는 사용자:', email);
         res.status(400);
         throw new Error('이미 존재하는 사용자입니다.');
     }
 
     // 비밀번호 해싱
+    console.log('🔒 비밀번호 해싱...');
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // 사용자 생성
-    const user = await User.create({
+    console.log('👤 사용자 생성 중...');
+    const userId = await User.create({
         email,
         password: hashedPassword,
         display_name,
     });
 
-    if (user) {
+    if (userId) {
+        const user = await User.findById(userId);
+        console.log('✅ 회원가입 성공:', { userId, email });
         res.status(201).json(formatUserResponse(user));
     } else {
+        console.log('❌ 사용자 생성 실패');
         res.status(400);
         throw new Error('사용자 생성에 실패했습니다.');
     }
@@ -74,27 +223,40 @@ const registerUser = asyncHandler(async (req, res) => {
 const loginUser = asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     
+    console.log('🔐 로그인 요청:', { email });
+    
     // 입력 검증
     const validationErrors = validateUserInput(email, password);
     if (validationErrors.length > 0) {
+        console.log('❌ 입력 검증 실패:', validationErrors);
         res.status(400);
         throw new Error(validationErrors.join(' '));
     }
     
     // 사용자 조회
-    const user = await User.findOne({ where: { email } });
+    console.log('🔍 사용자 조회...');
+    const user = await User.findByEmail(email);
     if (!user) {
+        console.log('❌ 사용자를 찾을 수 없음:', email);
         res.status(401);
         throw new Error('유효하지 않은 자격 증명입니다.');
     }
     
     // 비밀번호 검증
-    const isPasswordMatch = await bcrypt.compare(password, user.password);
+    console.log('🔒 비밀번호 검증...');
+    console.log('입력된 비밀번호:', password);
+    console.log('저장된 해시:', user.password);
+    
+    const isPasswordMatch = await User.validatePassword(user, password);
+    console.log('비밀번호 매치 결과:', isPasswordMatch);
+    
     if (!isPasswordMatch) {
+        console.log('❌ 비밀번호 불일치');
         res.status(401);
         throw new Error('유효하지 않은 자격 증명입니다.');
     }
     
+    console.log('✅ 로그인 성공:', { userId: user.id, email });
     res.json(formatUserResponse(user));
 });
 
@@ -190,4 +352,8 @@ module.exports = {
     unfollowUser,
     getFollowers,
     getFollowing,
+    resetPasswordForEmail, // 개발용 임시 함수
+    getUserData, // 디버깅용 임시 함수
+    testPasswordHash, // 해시 테스트용
+    verifyExistingHash, // 기존 해시 검증용
 };

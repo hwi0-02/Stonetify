@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const { User } = require('../models');
 
-const protect = (req, res, next) => {
+const protect = async (req, res, next) => {
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -11,8 +12,15 @@ const protect = (req, res, next) => {
       // 토큰 검증
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+      // 사용자 정보 조회 (Firebase에서)
+      const user = await User.findById(decoded.id);
+      if (!user) {
+        console.error('❌ 사용자를 찾을 수 없음:', decoded.id);
+        return res.status(401).json({ status: 'error', message: '인증에 실패했습니다. 사용자를 찾을 수 없습니다.' });
+      }
+
       // 검증 성공 시, 요청 객체(req)에 사용자 정보 저장
-      req.user = decoded;
+      req.user = user;
       
       next(); // 다음 미들웨어나 컨트롤러로 제어를 넘김
     } catch (error) {

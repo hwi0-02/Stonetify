@@ -3,33 +3,43 @@ import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, 
 import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync } from '../store/slices/playlistSlice';
-import { playTrack } from '../store/slices/playerSlice';
+import { playTrack, playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SongListItem from '../components/SongListItem';
-import { removeSongFromPlaylist } from '../services/apiService';
+import * as ApiService from '../services/apiService';
 
 const placeholderAlbum = require('../assets/images/placeholder_album.png');
 
 // 4개 이미지 격자를 렌더링하는 컴포넌트
 const PlaylistHeaderImage = ({ songs }) => {
   // Web과 Native 모두에서 작동하는 placeholder URL
-  const placeholderUrl = 'https://via.placeholder.com/150/282828/1DB954?text=♪';
+  const placeholderUrl = require('../assets/images/placeholder_album.png');
   
   // 첫 4개 노래의 커버 이미지 추출 (부족한 경우 placeholder로 채움)
   const imageUrls = Array(4).fill(null).map((_, index) => {
-    return (songs && songs[index]?.album_cover_url) || placeholderUrl;
+    return (songs && songs[index]?.album_cover_url) || null;
   });
+
+  const getImageSource = (imageUrl) => {
+    if (!imageUrl) {
+      return placeholderUrl;
+    }
+    if (typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
+      return { uri: imageUrl };
+    }
+    return placeholderUrl;
+  };
 
   return (
     <View style={styles.playlistImageGrid}>
       <View style={styles.imageRow}>
-        <Image source={{ uri: imageUrls[0] }} style={styles.gridImage} />
-        <Image source={{ uri: imageUrls[1] }} style={styles.gridImage} />
+        <Image source={getImageSource(imageUrls[0])} style={styles.gridImage} />
+        <Image source={getImageSource(imageUrls[1])} style={styles.gridImage} />
       </View>
       <View style={styles.imageRow}>
-        <Image source={{ uri: imageUrls[2] }} style={styles.gridImage} />
-        <Image source={{ uri: imageUrls[3] }} style={styles.gridImage} />
+        <Image source={getImageSource(imageUrls[2])} style={styles.gridImage} />
+        <Image source={getImageSource(imageUrls[3])} style={styles.gridImage} />
       </View>
     </View>
   );
@@ -60,19 +70,9 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       setEditTitle(currentPlaylist.title || '');
       setEditDescription(currentPlaylist.description || '');
       // 좋아요 상태 초기화 (실제로는 API에서 받아와야 함)
-      setIsLiked(currentPlaylist.isLiked || false);
+      setIsLiked(currentPlaylist.liked || false);
     }
   }, [currentPlaylist]);
-
-  // 노래 재생 핸들러
-  const handlePlayTrack = (track) => {
-    if (track.preview_url) {
-      dispatch(playTrack(track));
-      navigation.navigate('Player');
-    } else {
-      Alert.alert('알림', '이 트랙에는 미리 듣기가 없습니다.');
-    }
-  };
 
   // 플레이리스트 수정 핸들러
   const handleEditPlaylist = () => {
@@ -80,28 +80,62 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     setEditModalVisible(true);
   };
 
+  // 곡 재생 핸들러
+  const handlePlayTrack = (song) => {
+    dispatch(playTrackWithPlaylist(song, currentPlaylist.songs));
+    navigation.navigate('Player');
+  };
+
   // 플레이리스트 삭제 핸들러
   const handleDeletePlaylist = () => {
+    console.log('플레이리스트 삭제 함수 호출됨');
+    console.log('currentPlaylist:', currentPlaylist);
+    
     setMenuVisible(false);
+    
     Alert.alert(
-      '플레이리스트 삭제',
-      '정말로 이 플레이리스트를 삭제하시겠습니까?',
+      '⚠️ 플레이리스트 삭제',
+      `"${currentPlaylist?.title}"을(를) 영구적으로 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 플레이리스트와 모든 곡이 삭제됩니다.`,
       [
-        { text: '취소', style: 'cancel' },
+        { 
+          text: '취소', 
+          style: 'cancel',
+          onPress: () => {
+            console.log('플레이리스트 삭제 취소됨');
+          }
+        },
         { 
           text: '삭제', 
           style: 'destructive',
           onPress: async () => {
             try {
-              await dispatch(deletePlaylist(currentPlaylist.id)).unwrap();
-              Alert.alert('성공', '플레이리스트가 삭제되었습니다.');
-              navigation.goBack();
+              console.log('=== 플레이리스트 삭제 시작 ===');
+              console.log('플레이리스트 ID:', currentPlaylist.id);
+              console.log('플레이리스트 제목:', currentPlaylist.title);
+              
+              console.log('Redux deletePlaylist 액션 디스패치 중...');
+              const result = await dispatch(deletePlaylist(currentPlaylist.id)).unwrap();
+              console.log('Redux 액션 완료. 결과:', result);
+              
+              console.log('삭제 성공 알림 표시');
+              Alert.alert('✅ 삭제 완료', '플레이리스트가 성공적으로 삭제되었습니다.');
+              
+              console.log('메인 화면으로 이동');
+              navigation.navigate('Main');
             } catch (error) {
-              Alert.alert('오류', error || '플레이리스트 삭제에 실패했습니다.');
+              console.error('=== 플레이리스트 삭제 실패 ===');
+              console.error('오류 객체:', error);
+              console.error('오류 메시지:', error?.message);
+              console.error('오류 응답:', error?.response?.data);
+              Alert.alert(
+                '❌ 삭제 실패', 
+                `플레이리스트 삭제 중 오류가 발생했습니다.\n\n${error?.message || '알 수 없는 오류가 발생했습니다.'}`
+              );
             }
           }
         }
-      ]
+      ],
+      { cancelable: false }
     );
   };
 
@@ -128,28 +162,47 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
   };
 
-  // 곡 삭제 핸들러
+  // 곡 삭제 핸들러 - 확인 대화상자 추가
   const handleRemoveSong = async (song) => {
+    console.log('=== 삭제 함수 호출됨 ===');
+    console.log('곡 정보:', song);
+    console.log('플레이리스트 ID:', currentPlaylist?.id);
+    
     Alert.alert(
-      '곡 삭제',
-      `"${song.title || song.name}"을(를) 플레이리스트에서 삭제하시겠습니까?`,
+      '🎵 곡 삭제',
+      `"${song.name || song.title}"을(를) 플레이리스트에서 제거하시겠습니까?\n\n곡 자체는 삭제되지 않으며, 이 플레이리스트에서만 제거됩니다.`,
       [
-        { text: '취소', style: 'cancel' },
         { 
-          text: '삭제', 
+          text: '취소', 
+          style: 'cancel',
+          onPress: () => {
+            console.log('곡 삭제 취소됨');
+          }
+        },
+        { 
+          text: '제거', 
           style: 'destructive',
           onPress: async () => {
             try {
-              await removeSongFromPlaylist(currentPlaylist.id, song.id);
-              // 플레이리스트 다시 로드
+              console.log('삭제 API 호출 중...');
+              await ApiService.removeSongFromPlaylist(currentPlaylist.id, song.id);
+              console.log('삭제 성공! 플레이리스트 새로고침...');
+              
+              // 플레이리스트 새로고침
               dispatch(fetchPlaylistDetails(currentPlaylist.id));
-              Alert.alert('성공', '곡이 삭제되었습니다.');
+              
+              Alert.alert('✅ 제거 완료', '곡이 플레이리스트에서 제거되었습니다.');
             } catch (error) {
-              Alert.alert('오류', '곡 삭제에 실패했습니다.');
+              console.error('삭제 실패:', error);
+              Alert.alert(
+                '❌ 제거 실패', 
+                `곡 제거 중 오류가 발생했습니다.\n\n${error?.message || '알 수 없는 오류가 발생했습니다.'}`
+              );
             }
           }
         }
-      ]
+      ],
+      { cancelable: false }
     );
   };
 
@@ -183,7 +236,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
 
   // 현재 사용자가 플레이리스트 소유자인지 확인
   const isOwner = currentPlaylist && user && currentPlaylist.user_id === user.id;
-
+  
   const imageUrl = currentPlaylist?.songs?.[0]?.album_cover_url;
 
   if (status === 'loading' || !currentPlaylist) {
@@ -198,17 +251,21 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     <LinearGradient colors={['#4c1e6e', '#121212']} style={styles.header}>
       <PlaylistHeaderImage songs={currentPlaylist.songs || []} />
       <Text style={styles.title}>{currentPlaylist.title}</Text>
-      {currentPlaylist.description && <Text style={styles.description}>{currentPlaylist.description}</Text>}
-      <Text style={styles.creator}>By {currentPlaylist.user.display_name}</Text>
+      {currentPlaylist.description ? (
+        <Text style={styles.description}>{currentPlaylist.description}</Text>
+      ) : null}
+      <Text style={styles.creator}>
+        By {currentPlaylist.user?.display_name || 'Unknown User'}
+      </Text>
       
       {/* 플레이리스트 메뉴와 재생 버튼 */}
       <View style={styles.actionButtons}>
         {/* 메뉴 버튼 (수정/삭제) - 소유자에게만 표시 */}
-        {isOwner && (
+        {isOwner ? (
           <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible(true)}>
             <Ionicons name="ellipsis-horizontal" size={24} color="white" />
           </TouchableOpacity>
-        )}
+        ) : null}
         
         {/* 좋아요 버튼 */}
         <TouchableOpacity style={styles.likeButton} onPress={handleToggleLike}>
@@ -221,11 +278,26 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         
         {/* 재생 버튼 */}
-        {currentPlaylist.songs && currentPlaylist.songs.length > 0 && (
-          <TouchableOpacity style={styles.playButton} onPress={() => handlePlayTrack(currentPlaylist.songs[0])}>
+        {currentPlaylist.songs && currentPlaylist.songs.length > 0 ? (
+          <TouchableOpacity 
+            style={styles.playButton} 
+            onPress={() => {
+              const firstSong = currentPlaylist.songs[0];
+              if (firstSong.preview_url) {
+                dispatch(playTrackWithPlaylist({ 
+                  track: firstSong, 
+                  playlist: currentPlaylist.songs, 
+                  index: 0 
+                }));
+                navigation.navigate('Player');
+              } else {
+                Alert.alert('알림', '이 트랙에는 미리 듣기가 없습니다.');
+              }
+            }}
+          >
             <Ionicons name="play-circle" size={60} color="#1DB954" />
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
     </LinearGradient>
   );
@@ -242,12 +314,15 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       <FlatList
         data={currentPlaylist.songs || []}
         keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <SongListItem 
-            item={item} 
-            onPress={handlePlayTrack} 
-            showRemoveButton={isOwner}
-            onRemovePress={isOwner ? handleRemoveSong : null}
+            item={item}
+            onPress={handlePlayTrack}
+            showRemoveButton={true}
+            onRemovePress={handleRemoveSong}
+            showPlayButton={true}
+            playlist={currentPlaylist.songs}
+            index={index}
           />
         )}
         ListHeaderComponent={renderHeader}
@@ -278,7 +353,14 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
               <Ionicons name="create-outline" size={24} color="#ffffff" />
               <Text style={styles.menuItemText}>플레이리스트 수정</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuItem, styles.deleteMenuItem]} onPress={handleDeletePlaylist}>
+            <TouchableOpacity 
+              style={[styles.menuItem, styles.deleteMenuItem]} 
+              onPress={() => {
+                console.log('플레이리스트 삭제 버튼 클릭됨');
+                setMenuVisible(false);
+                handleDeletePlaylist();
+              }}
+            >
               <Ionicons name="trash-outline" size={24} color="#ff4444" />
               <Text style={[styles.menuItemText, styles.deleteMenuText]}>플레이리스트 삭제</Text>
             </TouchableOpacity>

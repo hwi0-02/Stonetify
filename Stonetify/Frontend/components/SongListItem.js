@@ -18,7 +18,7 @@ const SongListItem = ({ item, onPress, onAddPress, onRemovePress, showRemoveButt
       </View>
       {showRemoveButton && onRemovePress && (
         <TouchableOpacity onPress={() => onRemovePress(item)} style={styles.removeButton}>
-          <Ionicons name="close" size={24} color="#ff4444" />
+          <Ionicons name="trash-outline" size={20} color="#ff4444" />
         </TouchableOpacity>
       )}
       {onAddPress && (
@@ -64,8 +64,12 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   removeButton: {
-    padding: 5,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 16,
+    padding: 8,
     marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#ff4444',
   },
 });
 

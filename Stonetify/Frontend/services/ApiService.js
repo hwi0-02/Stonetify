@@ -5,12 +5,12 @@ import { Platform } from 'react-native';
 
 // 환경 설정 통합
 const CONFIG = {
-  LOCAL_IP: '192.168.219.105',
+  LOCAL_IP: '172.31.45.120',
   BACKEND_PORT: 5000,
   PROXY_PORT: 3001,
   TIMEOUT: 15000,
   RETRY_DELAY: 1000,
-  PRODUCTION_API: 'https://your-production-api.com/api/',
+  PRODUCTION_API: 'http://172.31.45.120:5000/api/',
 };
 
 // 환경별 API URL 설정 (최적화된 버전)
@@ -118,11 +118,39 @@ export const getMyPlaylists = () => api.get('playlists/me').then(res => res.data
 export const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId}`).then(res => res.data);
 export const getPlaylistById = (playlistId) => api.get(`playlists/${playlistId}`).then(res => res.data);
 export const updatePlaylist = (playlistId, playlistData) => api.put(`playlists/${playlistId}`, playlistData).then(res => res.data);
-export const deletePlaylist = (playlistId) => api.delete(`playlists/${playlistId}`).then(res => res.data);
+
+// 플레이리스트 삭제
+export const deletePlaylist = async (playlistId) => {
+  try {
+    console.log('🗑️ 플레이리스트 삭제 API 호출:', playlistId);
+    const response = await api.delete(`playlists/${playlistId}`);
+    console.log('✅ 플레이리스트 삭제 성공:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('❌ 플레이리스트 삭제 실패:', error);
+    console.error('에러 상태:', error.response?.status);
+    console.error('에러 메시지:', error.response?.data);
+    throw error;
+  }
+};
 
 // Playlist Song Management APIs
 export const addSongToPlaylist = (playlistId, songData) => api.post(`playlists/${playlistId}/songs`, { song: songData }).then(res => res.data);
-export const removeSongFromPlaylist = (playlistId, songId) => api.delete(`playlists/${playlistId}/songs/${songId}`).then(res => res.data);
+
+// 플레이리스트에서 곡 삭제
+export const removeSongFromPlaylist = async (playlistId, songId) => {
+  try {
+    console.log('🗑️ 곡 삭제 API 호출:', { playlistId, songId });
+    const response = await api.delete(`playlists/${playlistId}/songs/${songId}`);
+    console.log('✅ 곡 삭제 성공:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('❌ 곡 삭제 실패:', error);
+    console.error('에러 상태:', error.response?.status);
+    console.error('에러 메시지:', error.response?.data);
+    throw error;
+  }
+};
 
 // Playlist Interaction APIs
 export const toggleLikePlaylist = (playlistId) => api.post(`playlists/${playlistId}/like`).then(res => res.data);
