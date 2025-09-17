@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, FlatList, TouchableOpacity, Modal, Alert, ActivityIndicator } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation, useRoute } from '@react-navigation/native'; // ❗ useRoute 추가
@@ -86,10 +86,6 @@ const SearchScreen = () => {
       setSelectedSong(null);
 
       // 새 플레이리스트 생성 후 곡 추가가 완료되면 CreatePlaylistScreen으로 돌아가지 않고 SearchScreen에 머무름
-      if (isCreatingPlaylist) {
-        navigation.setParams({ isCreatingPlaylist: false }); // 플래그 초기화
-      }
-
     } catch (error) {
       const errorMessage = error.response?.data?.message || '곡 추가에 실패했습니다.';
       Alert.alert('오류', errorMessage);
@@ -108,27 +104,29 @@ const SearchScreen = () => {
   // 플레이리스트 생성 완료 함수
   const handleSavePlaylist = () => {
     if (newlyCreatedPlaylistId) {
-      Alert.alert(
-        '플레이리스트 생성 완료',
-        `'${playlistTitle}' 플레이리스트가 성공적으로 생성되었습니다.`,
-        [
-          {
-            text: '확인',
-            onPress: () => {
-              // 메인 페이지로 이동
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'MainTab' }],
-              });
-            }
-          }
-        ]
-      );
+  // 완료 후 메인으로 이동 및 플레이리스트 새로고침
+  dispatch(fetchMyPlaylists());
+  // AppNavigator 구조 상 Stack: 'Main' 안에 Tab: 'Home'/'Search'/'Profile'
+  navigation.navigate('Main', { screen: 'Home' });
     } else {
       Alert.alert('오류', '플레이리스트를 먼저 생성해주세요.');
     }
   };
 
+  // Update header button when in playlist creation mode
+  useLayoutEffect(() => {
+    if (isCreatingPlaylist && newlyCreatedPlaylistId) {
+      navigation.setOptions({
+        headerRight: () => (
+          <TouchableOpacity onPress={handleSavePlaylist} style={styles.saveNavButton}>
+            <Text style={styles.saveNavButtonText}>저장</Text>
+          </TouchableOpacity>
+        ),
+      });
+    } else {
+      navigation.setOptions({ headerRight: null });
+    }
+  }, [navigation, isCreatingPlaylist, newlyCreatedPlaylistId]);
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -289,9 +287,27 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
   },
+  saveButtonDisabled: {
+    backgroundColor: '#404040',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    minWidth: 60,
+    alignItems: 'center',
+  },
   saveButtonText: {
     color: '#ffffff',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  // Header navigation save button styles
+  saveNavButton: {
+    marginRight: 16,
+    padding: 8,
+  },
+  saveNavButtonText: {
+    color: '#1db954',
+    fontSize: 16,
     fontWeight: '600',
   },
   searchContainer: {

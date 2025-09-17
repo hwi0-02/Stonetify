@@ -2,27 +2,27 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import placeholderAlbum from '../../assets/images/placeholder_album.png';
 import { useDispatch, useSelector } from 'react-redux';
-import { toggleLikePlaylist } from '../../store/slices/playlistSlice';
+import { toggleLikePlaylist, deletePlaylist } from '../../store/slices/playlistSlice';
 import ShareModal from './ShareModal';
 
 // 플레이리스트 썸네일 (2x2 이미지 격자)
 const PlaylistThumbnail = ({ coverImages, isLiked, onLikePress }) => {
-  const placeholderUrl = 'https://via.placeholder.com/150/1a1a1a/1DB954?text=♪';
-  
   const imageSlots = Array(4).fill(null).map((_, index) => {
-    return coverImages[index] || placeholderUrl;
+    const url = coverImages[index];
+    return url ? { uri: url } : placeholderAlbum;
   });
 
   return (
     <View style={styles.thumbnailGrid}>
       <View style={styles.gridRow}>
-        <Image source={{ uri: imageSlots[0] }} style={styles.gridImage} />
-        <Image source={{ uri: imageSlots[1] }} style={styles.gridImage} />
+        <Image source={imageSlots[0]} style={styles.gridImage} />
+        <Image source={imageSlots[1]} style={styles.gridImage} />
       </View>
       <View style={styles.gridRow}>
-        <Image source={{ uri: imageSlots[2] }} style={styles.gridImage} />
-        <Image source={{ uri: imageSlots[3] }} style={styles.gridImage} />
+        <Image source={imageSlots[2]} style={styles.gridImage} />
+        <Image source={imageSlots[3]} style={styles.gridImage} />
       </View>
       <TouchableOpacity style={styles.thumbnailHeartButton} onPress={onLikePress}>
         <Ionicons 
@@ -57,6 +57,28 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
     setShareModalVisible(true);
   };
 
+  const handleDelete = async () => {
+    Alert.alert(
+      '플레이리스트 삭제',
+      `"${playlist.title}"을(를) 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await dispatch(deletePlaylist(playlist.id)).unwrap();
+            } catch (e) {
+              Alert.alert('오류', e || '삭제 중 문제가 발생했습니다.');
+            }
+          }
+        }
+      ],
+      { cancelable: true }
+    );
+  };
+
   return (
     <TouchableOpacity style={styles.cardContainer} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.imageContainer}>
@@ -73,6 +95,11 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
             <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
               <Ionicons name="share-outline" size={20} color="#ffffff" />
             </TouchableOpacity>
+            {user && playlist.user_id === user.id && (
+              <TouchableOpacity style={[styles.actionButton, { borderColor: '#ff4444' }]} onPress={handleDelete}>
+                <Ionicons name="trash-outline" size={20} color="#ff4444" />
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>

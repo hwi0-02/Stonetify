@@ -1,4 +1,4 @@
-    const { User, Follow } = require('../models');
+const { User, Follow } = require('../models');
 const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -257,15 +257,20 @@ const loginUser = asyncHandler(async (req, res) => {
     }
     
     console.log('✅ 로그인 성공:', { userId: user.id, email });
-    res.json(formatUserResponse(user));
+    
+    // Generate JWT token
+    const token = generateToken(user.id);
+    res.json({
+      ...formatUserResponse(user),
+      token
+    });
 });
 
 // 사용자 정보 조회
 const getMe = asyncHandler(async (req, res) => {
-    const user = await User.findByPk(req.user.id, {
-        attributes: { exclude: ['password'] }
-    });
-    res.status(200).json(user);
+    // formatUserResponse와 토큰 없이 사용자 데이터 반환
+    const user = await User.findById(req.user.id);
+    res.status(200).json(formatUserResponse(user));
 });
 
 

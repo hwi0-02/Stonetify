@@ -38,32 +38,43 @@ class Playlist {
     return await this.findById(id);
   }
 
+  // ❗ [수정됨] 안정성을 높인 삭제 로직
   static async delete(id) {
-    console.log('Playlist.delete 호출됨:', id);
-    
-    // 플레이리스트 삭제
-    console.log('플레이리스트 삭제 중...');
-    await RealtimeDBHelpers.deleteDocument(COLLECTIONS.PLAYLISTS, id);
-    console.log('플레이리스트 삭제 완료');
-    
-    // 관련 playlist_songs도 삭제 (별도 처리 필요)
-    console.log('관련 곡들 삭제 중...');
-    const playlistSongs = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.PLAYLIST_SONGS, 'playlist_id', id);
-    console.log('삭제할 곡 개수:', playlistSongs.length);
-    for (const song of playlistSongs) {
-      await RealtimeDBHelpers.deleteDocument(COLLECTIONS.PLAYLIST_SONGS, song.id);
+    console.log(`[DB Model] Playlist.delete 호출됨: ${id}`);
+    try {
+        // 1. 삭제할 모든 관련 데이터를 먼저 조회합니다.
+        const playlistSongsQuery = RealtimeDBHelpers.queryDocuments(COLLECTIONS.PLAYLIST_SONGS, 'playlist_id', id);
+        const likesQuery = RealtimeDBHelpers.queryDocuments(COLLECTIONS.LIKED_PLAYLISTS, 'playlist_id', id);
+        
+        const [playlistSongs, likes] = await Promise.all([playlistSongsQuery, likesQuery]);
+
+        console.log(`[DB Model] 삭제 대상: ${playlistSongs.length}곡, ${likes.length}개의 좋아요`);
+
+        // 2. 모든 삭제 작업을 Promise 배열에 담습니다.
+        const deletionPromises = [];
+
+        // 관련 playlist_songs 삭제 프로미스 추가
+        playlistSongs.forEach(song => {
+            deletionPromises.push(RealtimeDBHelpers.deleteDocument(COLLECTIONS.PLAYLIST_SONGS, song.id));
+        });
+
+        // 관련 likes 삭제 프로미스 추가
+        likes.forEach(like => {
+            deletionPromises.push(RealtimeDBHelpers.deleteDocument(COLLECTIONS.LIKED_PLAYLISTS, like.id));
+        });
+
+        // 마지막으로 플레이리스트 본체 삭제 프로미스 추가
+        deletionPromises.push(RealtimeDBHelpers.deleteDocument(COLLECTIONS.PLAYLISTS, id));
+
+        // 3. 모든 삭제 작업을 병렬로 실행합니다.
+        await Promise.all(deletionPromises);
+        console.log(`[DB Model] 플레이리스트 ${id} 및 관련 데이터 모두 삭제 완료`);
+
+    } catch (error) {
+        console.error(`[DB Model] 플레이리스트 ${id} 및 관련 데이터 삭제 중 심각한 오류 발생:`, error);
+        // 오류를 상위로 전파하여 컨트롤러에서 처리하도록 합니다.
+        throw new Error('데이터베이스에서 플레이리스트 관련 항목들을 삭제하는 데 실패했습니다.');
     }
-    console.log('관련 곡들 삭제 완료');
-    
-    // 좋아요 삭제
-    console.log('좋아요 삭제 중...');
-    const likes = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.LIKED_PLAYLISTS, 'playlist_id', id);
-    console.log('삭제할 좋아요 개수:', likes.length);
-    for (const like of likes) {
-      await RealtimeDBHelpers.deleteDocument(COLLECTIONS.LIKED_PLAYLISTS, like.id);
-    }
-    console.log('좋아요 삭제 완료');
-    console.log('모든 삭제 작업 완료');
   }
 
   // 플레이리스트 검색

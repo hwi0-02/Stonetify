@@ -12,6 +12,7 @@ const getMyPlaylists = asyncHandler(async (req, res) => {
         const playlistsWithCovers = await Promise.all(playlists.map(async (playlist) => {
             // 플레이리스트의 곡들 가져오기
             const songs = await Song.findByPlaylistId(playlist.id);
+            const user = await User.findById(playlist.user_id);
             
             const coverImages = songs
                 .slice(0, 4)
@@ -22,6 +23,7 @@ const getMyPlaylists = asyncHandler(async (req, res) => {
                 ...playlist,
                 cover_images: coverImages,
                 cover_image_url: coverImages.length > 0 ? coverImages[0] : null,
+                user: user ? { id: user.id, display_name: user.display_name } : null,
             };
         }));
 
@@ -70,10 +72,24 @@ const getPlaylistById = asyncHandler(async (req, res) => {
     const songs = await Song.findByPlaylistId(id);
     const user = await User.findById(playlist.user_id);
 
+    const songsForClient = (songs || []).map(s => ({
+        id: s.id,
+        spotify_id: s.spotify_id,
+        name: s.title || s.name,
+        artists: s.artist,
+        album: s.album,
+        album_cover_url: s.album_cover_url,
+        preview_url: s.preview_url,
+        duration_ms: s.duration_ms,
+        external_urls: s.external_urls,
+        position: s.position,
+        added_at: s.added_at,
+    }));
+
     const playlistWithSongs = {
         ...playlist,
-        songs: songs || [],
-        user: user ? { id: user.id, username: user.username } : null,
+        songs: songsForClient,
+        user: user ? { id: user.id, display_name: user.display_name } : null,
     };
 
     res.status(200).json(playlistWithSongs);
@@ -92,6 +108,7 @@ const getPlaylistsByUser = asyncHandler(async (req, res) => {
         // 플레이리스트에 썸네일용 이미지 추가
         const playlistsWithCovers = await Promise.all(publicPlaylists.map(async (playlist) => {
             const songs = await Song.findByPlaylistId(playlist.id);
+            const user = await User.findById(playlist.user_id);
             
             const coverImages = songs
                 .slice(0, 4)
@@ -102,6 +119,7 @@ const getPlaylistsByUser = asyncHandler(async (req, res) => {
                 ...playlist,
                 cover_images: coverImages,
                 cover_image_url: coverImages.length > 0 ? coverImages[0] : null,
+                user: user ? { id: user.id, display_name: user.display_name } : null,
             };
         }));
 
@@ -201,24 +219,19 @@ const addSongToPlaylist = asyncHandler(async (req, res) => {
 
     console.log('🔄 곡 추가 시작...');
 
-    // 먼저 곡이 이미 존재하는지 확인
-    let existingSong = await Song.findBySpotifyId(song.spotify_id);
-    
-    if (!existingSong) {
-        console.log('새 곡 생성 중...');
-        // 곡이 없으면 새로 생성
-        const songId = await Song.create({
-            spotify_id: song.spotify_id,
-            name: song.name,
-            artist: song.artist,
-            album: song.album,
-            album_cover_url: song.album_cover_url,
-            preview_url: song.preview_url,
-            external_url: song.external_url,
-            duration_ms: song.duration_ms
-        });
-        existingSong = await Song.findById(songId);
-    }
+    // 곡을 표준화하여 찾거나 생성
+    const normalized = {
+        spotify_id: song.spotify_id || song.id,
+        title: song.title || song.name,
+        artist: song.artist || song.artists,
+        album: song.album,
+        album_cover_url: song.album_cover_url,
+        preview_url: song.preview_url,
+        duration_ms: song.duration_ms,
+        external_urls: song.external_urls || song.external_url || null,
+    };
+
+    const existingSong = await Song.findOrCreate(normalized);
 
     // 플레이리스트에 이미 이 곡이 있는지 확인
     const existingPlaylistSong = await PlaylistSongs.findByPlaylistAndSong(playlistId, existingSong.id);
@@ -255,17 +268,38 @@ const removeSongFromPlaylist = asyncHandler(async (req, res) => {
         throw new Error('자신의 플레이리스트에 있는 곡만 삭제할 수 있습니다.');
     }
 
-    const song = await Song.findById(songId);
+    // songId는 내부 DB ID 또는 spotify_id일 수 있음 → 유연하게 처리
+    let song = await Song.findById(songId);
     if (!song) {
-        console.log('❌ 곡을 찾을 수 없음:', songId);
+        console.log('🔎 DB ID로 곡을 찾지 못함. spotify_id로 재시도:', songId);
+        song = await Song.findBySpotifyId(songId);
+    }
+    if (!song) {
+        console.log('❌ 곡을 찾을 수 없음(spotify_id 포함 실패):', songId);
         res.status(404);
         throw new Error('곡을 찾을 수 없습니다.');
     }
 
     try {
         console.log('🔄 곡 삭제 시작...');
-        const removed = await PlaylistSongs.deleteByPlaylistAndSong(playlistId, songId);
-        
+        let removed = await PlaylistSongs.deleteByPlaylistAndSong(playlistId, song.id);
+
+        // Fallback: 링크가 어긋난 경우 spotify_id로 탐색
+        if (!removed) {
+            console.log('🔁 1차 삭제 실패. 대체 경로로 재시도');
+            const links = await PlaylistSongs.findByPlaylistId(playlistId);
+            console.log('🔍 후보 링크 수:', links.length);
+            for (const link of links) {
+                const s = await Song.findById(link.song_id);
+                if (s && (s.id === song.id || s.spotify_id === (song.spotify_id || songId))) {
+                    console.log('🧩 매칭된 링크 발견. 강제 삭제:', link.id);
+                    await PlaylistSongs.delete(link.id);
+                    removed = true;
+                    break;
+                }
+            }
+        }
+
         if (removed) {
             console.log('✅ 곡 삭제 완료');
             res.status(200).json({ message: '플레이리스트에서 곡이 성공적으로 삭제되었습니다.' });
@@ -330,7 +364,7 @@ const getLikedPlaylists = asyncHandler(async (req, res) => {
                 ...playlist,
                 cover_images: coverImages,
                 cover_image_url: coverImages.length > 0 ? coverImages[0] : null,
-                user: user ? { id: user.id, username: user.username } : null,
+                user: user ? { id: user.id, display_name: user.display_name } : null,
                 liked_at: like.created_at
             };
         }));
@@ -365,11 +399,12 @@ const createShareLink = asyncHandler(async (req, res) => {
 
     // 기존 활성 공유 링크 확인
     const existingLink = await ShareLink.findActiveByPlaylistId(playlist_id);
-    if (existingLink) {
+    if (existingLink.length > 0) { // 배열을 반환하므로 length로 확인
+        const link = existingLink[0];
         return res.status(200).json({
-            share_id: existingLink.share_id,
-            share_url: `${req.protocol}://${req.get('host')}/shared/${existingLink.share_id}`,
-            created_at: existingLink.created_at
+            share_id: link.id, // ID 사용
+            share_url: `${req.protocol}://${req.get('host')}/api/playlists/shared/${link.id}`,
+            created_at: link.created_at
         });
     }
 
@@ -377,14 +412,15 @@ const createShareLink = asyncHandler(async (req, res) => {
     const shareLinkId = await ShareLink.create({
         playlist_id,
         user_id: userId,
+        share_token: ShareLink.generateToken(), // 토큰 생성
         is_active: true
     });
 
     const shareLink = await ShareLink.findById(shareLinkId);
     
     res.status(201).json({
-        share_id: shareLink.share_id,
-        share_url: `${req.protocol}://${req.get('host')}/shared/${shareLink.share_id}`,
+        share_id: shareLink.id,
+        share_url: `${req.protocol}://${req.get('host')}/api/playlists/shared/${shareLink.id}`,
         created_at: shareLink.created_at
     });
 });
@@ -393,14 +429,14 @@ const createShareLink = asyncHandler(async (req, res) => {
 const getSharedPlaylist = asyncHandler(async (req, res) => {
     const { share_id } = req.params;
 
-    const shareLink = await ShareLink.findByShareId(share_id);
+    const shareLink = await ShareLink.findById(share_id); // ID로 조회
     if (!shareLink || !shareLink.is_active) {
         res.status(404);
         throw new Error('유효하지 않은 공유 링크입니다.');
     }
 
     // 조회수 증가
-    await ShareLink.incrementViews(shareLink.id);
+    await ShareLink.update(shareLink.id, { view_count: (shareLink.view_count || 0) + 1 });
 
     const playlist = await Playlist.findById(shareLink.playlist_id);
     if (!playlist) {
@@ -414,7 +450,7 @@ const getSharedPlaylist = asyncHandler(async (req, res) => {
     const playlistWithSongs = {
         ...playlist,
         songs: songs || [],
-        user: user ? { id: user.id, username: user.username } : null,
+        user: user ? { id: user.id, display_name: user.display_name } : null,
         shared_at: shareLink.created_at
     };
 
@@ -446,8 +482,8 @@ const getShareStats = asyncHandler(async (req, res) => {
         active_shares: activeLinks.length,
         total_views: totalViews,
         share_links: activeLinks.map(link => ({
-            share_id: link.share_id,
-            share_url: `${req.protocol}://${req.get('host')}/shared/${link.share_id}`,
+            share_id: link.id,
+            share_url: `${req.protocol}://${req.get('host')}/api/playlists/shared/${link.id}`,
             view_count: link.view_count || 0,
             created_at: link.created_at
         }))
@@ -470,10 +506,14 @@ const deactivateShareLink = asyncHandler(async (req, res) => {
         throw new Error('자신의 플레이리스트 공유만 취소할 수 있습니다.');
     }
 
-    await ShareLink.deactivateByPlaylistId(playlist_id);
+    const shareLinks = await ShareLink.findByPlaylistId(playlist_id);
+    for (const link of shareLinks) {
+      await ShareLink.deactivate(link.id);
+    }
     
-    res.status(200).json({ message: '공유 링크가 비활성화되었습니다.' });
+    res.status(200).json({ message: '모든 공유 링크가 비활성화되었습니다.' });
 });
+
 
 module.exports = {
     getMyPlaylists,

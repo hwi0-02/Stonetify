@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Slider } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import placeholderAlbum from '../assets/images/placeholder_album.png';
 import { useSelector, useDispatch } from 'react-redux';
 import { 
   playTrack, 
@@ -76,7 +77,7 @@ const AdvancedPlayer = () => {
       {/* 앨범 아트 */}
       <View style={styles.albumArtContainer}>
         <Image 
-          source={{ uri: currentTrack.album?.images?.[0]?.url || 'https://via.placeholder.com/300/1a1a1a/1DB954?text=♪' }}
+          source={currentTrack.album?.images?.[0]?.url ? { uri: currentTrack.album.images[0].url } : placeholderAlbum}
           style={styles.albumArt}
           contentFit="cover"
         />

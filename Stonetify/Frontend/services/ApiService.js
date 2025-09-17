@@ -135,7 +135,20 @@ export const deletePlaylist = async (playlistId) => {
 };
 
 // Playlist Song Management APIs
-export const addSongToPlaylist = (playlistId, songData) => api.post(`playlists/${playlistId}/songs`, { song: songData }).then(res => res.data);
+export const addSongToPlaylist = (playlistId, songData) => {
+  // Normalize incoming song object (from Spotify search or internal)
+  const normalized = {
+    spotify_id: songData.spotify_id || songData.id || null,
+    title: songData.title || songData.name || '',
+    artist: songData.artist || songData.artists || '',
+    album: songData.album || '',
+    album_cover_url: songData.album_cover_url || songData.albumCoverUrl || null,
+    preview_url: songData.preview_url || null,
+    duration_ms: songData.duration_ms || null,
+    external_urls: songData.external_urls || songData.external_url || null,
+  };
+  return api.post(`playlists/${playlistId}/songs`, { song: normalized }).then(res => res.data);
+};
 
 // 플레이리스트에서 곡 삭제
 export const removeSongFromPlaylist = async (playlistId, songId) => {

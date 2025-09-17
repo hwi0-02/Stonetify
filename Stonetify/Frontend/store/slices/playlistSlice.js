@@ -76,7 +76,8 @@ export const updatePlaylist = createAsyncThunk(
       const result = await apiService.updatePlaylist(playlistId, playlistData);
       return result;
     } catch (error) {
-      return thunkAPI.rejectWithValue('플레이리스트 수정에 실패했습니다.');
+      const message = error.response?.data?.message || '플레이리스트 수정에 실패했습니다.';
+      return thunkAPI.rejectWithValue(message);
     }
   }
 );
@@ -86,12 +87,53 @@ export const deletePlaylist = createAsyncThunk(
   async (playlistId, thunkAPI) => {
     try {
       await apiService.deletePlaylist(playlistId);
-      return playlistId;
+      return playlistId; // 성공 시 playlistId를 반환합니다.
     } catch (error) {
-      return thunkAPI.rejectWithValue('플레이리스트 삭제에 실패했습니다.');
+      const message = error.response?.data?.message || '플레이리스트 삭제에 실패했습니다.';
+      return thunkAPI.rejectWithValue(message);
     }
   }
 );
+
+// 플레이리스트 공유 링크 생성
+export const createShareLinkAsync = createAsyncThunk(
+  'playlist/createShareLink',
+  async (playlistId, thunkAPI) => {
+    try {
+      const result = await apiService.createShareLink(playlistId);
+      return result;
+    } catch (error) {
+      return thunkAPI.rejectWithValue('공유 링크 생성에 실패했습니다.');
+    }
+  }
+);
+
+// 공유 링크로 플레이리스트 조회
+export const fetchSharedPlaylist = createAsyncThunk(
+  'playlist/fetchSharedPlaylist',
+  async (playlistId, thunkAPI) => {
+    try {
+      const result = await apiService.getSharedPlaylist(playlistId);
+      return result;
+    } catch (error) {
+      return thunkAPI.rejectWithValue('공유 플레이리스트를 불러오는데 실패했습니다.');
+    }
+  }
+);
+
+// 플레이리스트 좋아요 토글
+export const toggleLikePlaylist = createAsyncThunk(
+  'playlist/toggleLikePlaylist',
+  async (playlistId, thunkAPI) => {
+    try {
+      const result = await apiService.toggleLikePlaylist(playlistId);
+      return { playlistId, liked: result.liked };
+    } catch (error) {
+      return thunkAPI.rejectWithValue('좋아요 처리에 실패했습니다.');
+    }
+  }
+);
+
 
 const playlistSlice = createSlice({
   name: 'playlist',
@@ -144,8 +186,9 @@ const playlistSlice = createSlice({
       .addCase(createPlaylist.pending, (state) => {
         state.status = 'loading';
       })
-      .addCase(createPlaylist.fulfilled, (state) => {
+      .addCase(createPlaylist.fulfilled, (state, action) => {
         state.status = 'succeeded';
+        state.userPlaylists.unshift(action.payload);
       })
       .addCase(createPlaylist.rejected, (state, action) => {
         state.status = 'failed';
@@ -232,44 +275,5 @@ const playlistSlice = createSlice({
       });
   },
 });
-
-// 플레이리스트 공유 링크 생성
-export const createShareLinkAsync = createAsyncThunk(
-  'playlist/createShareLink',
-  async (playlistId, thunkAPI) => {
-    try {
-      const result = await apiService.createShareLink(playlistId);
-      return result;
-    } catch (error) {
-      return thunkAPI.rejectWithValue('공유 링크 생성에 실패했습니다.');
-    }
-  }
-);
-
-// 공유 링크로 플레이리스트 조회
-export const fetchSharedPlaylist = createAsyncThunk(
-  'playlist/fetchSharedPlaylist',
-  async (playlistId, thunkAPI) => {
-    try {
-      const result = await apiService.getSharedPlaylist(playlistId);
-      return result;
-    } catch (error) {
-      return thunkAPI.rejectWithValue('공유 플레이리스트를 불러오는데 실패했습니다.');
-    }
-  }
-);
-
-// 플레이리스트 좋아요 토글
-export const toggleLikePlaylist = createAsyncThunk(
-  'playlist/toggleLikePlaylist',
-  async (playlistId, thunkAPI) => {
-    try {
-      const result = await apiService.toggleLikePlaylist(playlistId);
-      return { playlistId, liked: result.liked };
-    } catch (error) {
-      return thunkAPI.rejectWithValue('좋아요 처리에 실패했습니다.');
-    }
-  }
-);
 
 export default playlistSlice.reducer;
