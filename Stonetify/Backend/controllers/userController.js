@@ -2,6 +2,11 @@ const { User, Follow } = require('../models');
 const asyncHandler = require('express-async-handler');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { sendPasswordResetCode } = require('../utils/emailService');
+const { RealtimeDBHelpers, COLLECTIONS } = require('../config/firebase');
+
+// 비밀번호 재설정 코드 유효시간 (ms)
+const PASSWORD_RESET_TTL = 10 * 60 * 1000; // 10분
 
 // ==================== UTILITIES ====================
 
@@ -361,4 +366,75 @@ module.exports = {
     getUserData, // 디버깅용 임시 함수
     testPasswordHash, // 해시 테스트용
     verifyExistingHash, // 기존 해시 검증용
+    requestPasswordReset: asyncHandler(async (req, res) => {
+        const { email } = req.body;
+        if (!email) {
+            res.status(400);
+            throw new Error('이메일을 입력해주세요.');
+        }
+        const user = await User.findByEmail(email);
+        if (!user) {
+            // 사용자 존재 여부를 노출하지 않음
+            return res.status(200).json({ message: '비밀번호 재설정 코드가 전송되었습니다(실제 존재 여부 비공개).' });
+        }
+
+        // 6자리 코드 생성
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expires_at = Date.now() + PASSWORD_RESET_TTL;
+
+        // 기존 코드 무효화 (같은 사용자에 대해)
+        const existing = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.PASSWORD_RESETS, 'user_id', user.id);
+        for (const rec of existing) {
+            await RealtimeDBHelpers.deleteDocument(COLLECTIONS.PASSWORD_RESETS, rec.id);
+        }
+
+        // 새 코드 저장
+        await RealtimeDBHelpers.createDocument(COLLECTIONS.PASSWORD_RESETS, {
+            user_id: user.id,
+            email: user.email,
+            code,
+            expires_at,
+            created_at: Date.now(),
+            used: false
+        });
+
+        // 이메일 발송
+        try {
+            await sendPasswordResetCode(user.email, code);
+        } catch (e) {
+            console.error('비밀번호 재설정 이메일 전송 실패:', e.message);
+            res.status(500);
+            throw new Error('이메일 전송에 실패했습니다. 잠시 후 다시 시도해주세요.');
+        }
+
+        res.status(200).json({ message: '비밀번호 재설정 코드가 이메일로 전송되었습니다.' });
+    }),
+    verifyPasswordResetCode: asyncHandler(async (req, res) => {
+        const { email, code, newPassword } = req.body;
+        if (!email || !code || !newPassword) {
+            res.status(400);
+            throw new Error('이메일, 코드, 새 비밀번호를 모두 입력해주세요.');
+        }
+        const user = await User.findByEmail(email);
+        if (!user) {
+            res.status(400);
+            throw new Error('코드가 유효하지 않습니다.');
+        }
+        const records = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.PASSWORD_RESETS, 'user_id', user.id);
+        const record = records.find(r => r.code === code && !r.used);
+        if (!record) {
+            res.status(400);
+            throw new Error('코드가 유효하지 않습니다.');
+        }
+        if (Date.now() > record.expires_at) {
+            res.status(400);
+            throw new Error('코드가 만료되었습니다. 다시 요청해주세요.');
+        }
+        // 비밀번호 해시 후 저장
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+        await RealtimeDBHelpers.updateDocument(COLLECTIONS.USERS, user.id, { password: hashedPassword, updated_at: Date.now() });
+        await RealtimeDBHelpers.updateDocument(COLLECTIONS.PASSWORD_RESETS, record.id, { used: true, used_at: Date.now() });
+        res.status(200).json({ message: '비밀번호가 재설정되었습니다.' });
+    })
 };

@@ -32,6 +32,10 @@ router.get('/me', protect, getMe);
 
 // 개발용 비밀번호 재설정
 router.post('/reset-password', resetPasswordForEmail);
+// 새 비밀번호 재설정 요청 (코드 발송)
+router.post('/password-reset/request', require('../controllers/userController').requestPasswordReset);
+// 비밀번호 재설정 코드 검증 및 비밀번호 변경
+router.post('/password-reset/verify', require('../controllers/userController').verifyPasswordResetCode);
 
 // 디버깅용 사용자 데이터 조회
 router.get('/debug/:email', getUserData);

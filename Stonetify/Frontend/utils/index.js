@@ -50,7 +50,7 @@ export const network = {
   // 터널 모드 감지
   isTunnelMode() {
     if (Platform.OS === 'web') {
-      const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+      const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
       return currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
     }
     

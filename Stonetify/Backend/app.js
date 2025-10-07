@@ -1,11 +1,40 @@
 const express = require('express');
-const dotenv = require('dotenv').config();
+const path = require('path');
+// Explicitly load .env from Backend directory (when starting from repo root)
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+// Sentry (optional – will be no-op if DSN not provided)
+let Sentry = null;
+try {
+  Sentry = require('@sentry/node');
+  if (process.env.SENTRY_DSN) {
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      tracesSampleRate: 0.1,
+      environment: process.env.NODE_ENV || 'development'
+    });
+  }
+} catch (e) {
+  console.log('Sentry not installed (backend), skipping init');
+}
 const cors = require('cors');
 const https = require('https');
 const fs = require('fs');
-const path = require('path');
+// (path already imported above)
 const { errorHandler } = require('./middleware/errorMiddleware');
-// Firebase 초기화
+// Firebase 초기화 (with basic env validation before require to provide clearer errors)
+const requiredFirebaseVars = [
+  'FIREBASE_PROJECT_ID',
+  'FIREBASE_PRIVATE_KEY_ID',
+  'FIREBASE_PRIVATE_KEY',
+  'FIREBASE_CLIENT_EMAIL',
+  'FIREBASE_CLIENT_ID',
+  'FIREBASE_CLIENT_X509_CERT_URL',
+  'FIREBASE_DATABASE_URL'
+];
+const missingFirebase = requiredFirebaseVars.filter(k => !process.env[k]);
+if (missingFirebase.length) {
+  console.warn('[Firebase] Missing env vars:', missingFirebase.join(', '));
+}
 const { db } = require('./config/firebase');
 
 const app = express();
@@ -35,6 +64,11 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
+// Sentry request handler (if initialized)
+if (Sentry && Sentry.getCurrentHub().getClient()) {
+  app.use(Sentry.Handlers.requestHandler());
+}
+
 // 미들웨어 설정
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
@@ -50,6 +84,15 @@ app.use('/api/recommendations', require('./routes/recommendationRoutes'));
 // Firebase 연결 확인
 console.log('🔥 Firebase Realtime Database 연결됨');
 
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', ts: Date.now() });
+});
+
+// Sentry error handler first
+if (Sentry && Sentry.getCurrentHub().getClient()) {
+  app.use(Sentry.Handlers.errorHandler());
+}
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;

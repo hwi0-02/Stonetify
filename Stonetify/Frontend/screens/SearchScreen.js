@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/apiService';
 import SongListItem from '../components/SongListItem';
 import debounce from 'lodash.debounce';
-import { playTrack } from '../store/slices/playerSlice';
+import { playTrack, loadQueue } from '../store/slices/playerSlice';
 import { fetchMyPlaylists, createPlaylist } from '../store/slices/playlistSlice';
 import { loadSearchHistory, saveSearchTerm, addRecentSearch } from '../store/slices/searchSlice';
 
@@ -119,12 +119,14 @@ const SearchScreen = () => {
   };
 
   const handlePlayTrack = (track) => {
-    if (track.preview_url) {
-      dispatch(playTrack(track));
-      navigation.navigate('Player');
-    } else {
-      Alert.alert('미리듣기 없음', '이 곡은 미리듣기를 제공하지 않습니다.');
-    }
+    const list = showLiked ? likedSongs : results;
+    if (!list || !list.length) return;
+    const startIndex = list.findIndex(t => (t.id || t.spotify_id) === (track.id || track.spotify_id));
+    if (startIndex === -1) return;
+    dispatch(loadQueue({ tracks: list, startIndex }))
+      .unwrap()
+      .then(() => navigation.navigate('Player'))
+      .catch(() => Alert.alert('재생 오류', '재생 가능한 트랙이 없습니다.'));
   };
 
   // 플레이리스트 생성 완료 함수

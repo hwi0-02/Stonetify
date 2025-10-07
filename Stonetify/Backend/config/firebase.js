@@ -1,31 +1,47 @@
 const admin = require('firebase-admin');
 
-// Firebase 서비스 계정 키 (환경변수에서 가져오기)
+// Firebase ?�비??계정 ??(?�경변?�에??가?�오�?
 const serviceAccount = {
-  type: "service_account",
+  type: 'service_account',
   project_id: process.env.FIREBASE_PROJECT_ID,
   private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
   private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
   client_email: process.env.FIREBASE_CLIENT_EMAIL,
   client_id: process.env.FIREBASE_CLIENT_ID,
-  auth_uri: "https://accounts.google.com/o/oauth2/auth",
-  token_uri: "https://oauth2.googleapis.com/token",
-  auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-  client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL,
-  universe_domain: "googleapis.com"
+  auth_uri: 'https://accounts.google.com/o/oauth2/auth',
+  token_uri: 'https://oauth2.googleapis.com/token',
+  auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
+  client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL || process.env.FIREBASE_CLIENT_CERT_URL,
+  universe_domain: 'googleapis.com'
 };
 
-// Firebase Admin 초기화
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: process.env.FIREBASE_DATABASE_URL
-  });
+// Firebase Admin 초기??
+let initOk = true;
+if (!serviceAccount.project_id || typeof serviceAccount.project_id !== 'string') {
+  console.warn('[Firebase] Invalid or missing FIREBASE_PROJECT_ID. Firebase Admin will not be initialized.');
+  initOk = false;
+}
+if (!serviceAccount.private_key || !serviceAccount.client_email) {
+  console.warn('[Firebase] Missing private key or client email.');
+  initOk = false;
 }
 
-const db = admin.database();
+if (initOk && !admin.apps.length) {
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL
+    });
+    console.log('[Firebase] Admin initialized:', serviceAccount.project_id);
+  } catch (e) {
+    console.warn('[Firebase] Initialization failed:', e.message);
+    initOk = false;
+  }
+}
 
-// 컬렉션 이름 상수
+const db = initOk ? admin.database() : { ref: () => ({ push: () => ({ set: async () => {}, key: 'mock' }), once: async () => ({ exists: () => false }), update: async () => {}, remove: async () => {} }) };
+
+// 컬렉???�름 ?�수
 const COLLECTIONS = {
   USERS: 'users',
   PLAYLISTS: 'playlists',
@@ -38,12 +54,15 @@ const COLLECTIONS = {
   FOLLOWS: 'follows',
   RECENT_VIEWS: 'recent_views',
   RECOMMENDATIONS: 'recommendations',
-  SHARE_LINKS: 'share_links'
+  SHARE_LINKS: 'share_links',
+  PASSWORD_RESETS: 'password_resets',
+  SPOTIFY_TOKENS: 'spotify_tokens',
+  PLAYBACK_HISTORY: 'playback_history'
 };
 
-// Firebase Realtime Database 헬퍼 클래스
+// Firebase Realtime Database ?�퍼 ?�래??
 class RealtimeDBHelpers {
-  // 문서 생성
+  // 문서 ?�성
   static async createDocument(collection, data) {
     const ref = db.ref(collection).push();
     await ref.set({
@@ -53,18 +72,18 @@ class RealtimeDBHelpers {
     return ref.key;
   }
 
-  // ID로 문서 조회
+  // ID�?문서 조회
   static async getDocumentById(collection, id) {
     const snapshot = await db.ref(`${collection}/${id}`).once('value');
     return snapshot.exists() ? snapshot.val() : null;
   }
 
-  // 문서 업데이트
+  // 문서 ?�데?�트
   static async updateDocument(collection, id, data) {
     await db.ref(`${collection}/${id}`).update(data);
   }
 
-  // 문서 삭제
+  // 문서 ??��
   static async deleteDocument(collection, id) {
     await db.ref(`${collection}/${id}`).remove();
   }
@@ -86,7 +105,7 @@ class RealtimeDBHelpers {
     return documents;
   }
 
-  // 조건으로 문서 조회
+  // 조건?�로 문서 조회
   static async queryDocuments(collection, field, value) {
     const snapshot = await db.ref(collection).orderByChild(field).equalTo(value).once('value');
     if (!snapshot.exists()) return [];
@@ -103,7 +122,7 @@ class RealtimeDBHelpers {
     return documents;
   }
 
-  // 정렬된 문서 조회
+  // ?�렬??문서 조회
   static async getDocumentsSorted(collection, field, order = 'asc', limit = null) {
     let query = db.ref(collection).orderByChild(field);
     
@@ -124,7 +143,7 @@ class RealtimeDBHelpers {
     return results;
   }
 
-  // 복합 조건 조회 (클라이언트 사이드 필터링)
+  // 복합 조건 조회 (?�라?�언???�이???�터�?
   static async queryDocumentsMultiple(collection, conditions) {
     const allDocs = await this.getAllDocuments(collection);
     

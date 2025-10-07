@@ -3,52 +3,57 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-// 환경 설정 통합
+// ?�경 ?�정 ?�합
 const CONFIG = {
-  LOCAL_IP: '172.31.45.120',
+  LOCAL_IP: '192.168.219.105',
   BACKEND_PORT: 5000,
   PROXY_PORT: 3001,
   TIMEOUT: 15000,
   RETRY_DELAY: 1000,
-  PRODUCTION_API: 'http://172.31.45.120:5000/api/',
+  PRODUCTION_API: 'http://192.168.219.105:5000/api/',
 };
 
-// 환경별 API URL 설정 (최적화된 버전)
+// ?�경�?API URL ?�정 (최적?�된 버전)
 const getApiUrl = () => {
   if (__DEV__) {
     if (Platform.OS === 'web') {
-      const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+      const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
       
-      // HTTPS 터널 모드 감지 및 프록시 서버 사용
+      // HTTPS ?�널 모드 감�? �??�록???�버 ?�용
       if (currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'))) {
-        console.log('🌐 터널 모드: HTTPS 프록시 서버 사용');
+        console.log('?�� ?�널 모드: HTTPS ?�록???�버 ?�용');
         return `http://localhost:${CONFIG.PROXY_PORT}/proxy/api/`;
       }
       
-      // 로컬 웹 개발
+      // 로컬 ??개발
       return `http://localhost:${CONFIG.BACKEND_PORT}/api/`;
     }
     
-    // 모바일에서 터널 모드 감지
+    // 모바?�에???�널 모드 감�?
     const hostUri = Constants.expoConfig?.hostUri;
     
     if (hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'))) {
-      // 모바일 터널 모드에서는 IP 주소 사용
+      // 모바???�널 모드?�서??IP 주소 ?�용
       return process.env.EXPO_PUBLIC_API_URL || `http://${CONFIG.LOCAL_IP}:${CONFIG.BACKEND_PORT}/api/`;
     }
     
-    // 일반 로컬 네트워크
+    // 안드로이드 에뮬레이터는 10.0.2.2를 통해 호스트(PC)의 localhost에 접근합니다.
+    if (Platform.OS === 'android') {
+      return `http://10.0.2.2:${CONFIG.BACKEND_PORT}/api/`;
+    }
+
+    // ?�반 로컬 ?�트?�크 (iOS 시뮬레이터/실기기 등)
     return `http://${CONFIG.LOCAL_IP}:${CONFIG.BACKEND_PORT}/api/`;
   }
   
-  // 프로덕션 환경
+  // ?�로?�션 ?�경
   return CONFIG.PRODUCTION_API;
 };
 
-// 초기화
+// 초기??
 const API_URL = getApiUrl();
 
-// 터널 모드 감지 유틸리티 (최적화)
+// ?�널 모드 감�? ?�틸리티 (최적??
 const isTunnelMode = () => {
   if (Platform.OS === 'web') {
     const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
@@ -59,7 +64,7 @@ const isTunnelMode = () => {
   return hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'));
 };
 
-// Axios 인스턴스 생성 (최적화된 설정)
+// Axios ?�스?�스 ?�성 (최적?�된 ?�정)
 const api = axios.create({
   baseURL: API_URL,
   timeout: CONFIG.TIMEOUT,
@@ -68,7 +73,7 @@ const api = axios.create({
   },
 });
 
-// 요청 인터셉터 (토큰 자동 추가)
+// ?�청 ?�터?�터 (?�큰 ?�동 추�?)
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem('token');
   if (token) {
@@ -77,20 +82,20 @@ api.interceptors.request.use(async (config) => {
   return config;
 }, (error) => Promise.reject(error));
 
-// 응답 인터셉터 (에러 처리 및 재시도 로직)
+// ?�답 ?�터?�터 (?�러 처리 �??�시??로직)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
     
-    // 네트워크 오류 재시도 로직
+    // ?�트?�크 ?�류 ?�시??로직
     if ((error.code === 'NETWORK_ERROR' || error.code === 'ECONNABORTED') && !originalRequest._retry) {
       originalRequest._retry = true;
       await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
       return api(originalRequest);
     }
     
-    // 401 에러 시 토큰 정리 및 로그아웃
+    // 401 ?�러 ???�큰 ?�리 �?로그?�웃
     if (error.response?.status === 401) {
       await AsyncStorage.multiRemove(['token', 'user']);
     }
@@ -119,17 +124,17 @@ export const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId
 export const getPlaylistById = (playlistId) => api.get(`playlists/${playlistId}`).then(res => res.data);
 export const updatePlaylist = (playlistId, playlistData) => api.put(`playlists/${playlistId}`, playlistData).then(res => res.data);
 
-// 플레이리스트 삭제
+// ?�레?�리?�트 ??��
 export const deletePlaylist = async (playlistId) => {
   try {
-    console.log('🗑️ 플레이리스트 삭제 API 호출:', playlistId);
+    console.log('?���??�레?�리?�트 ??�� API ?�출:', playlistId);
     const response = await api.delete(`playlists/${playlistId}`);
-    console.log('✅ 플레이리스트 삭제 성공:', response.data);
+    console.log('???�레?�리?�트 ??�� ?�공:', response.data);
     return response.data;
   } catch (error) {
-    console.error('❌ 플레이리스트 삭제 실패:', error);
-    console.error('에러 상태:', error.response?.status);
-    console.error('에러 메시지:', error.response?.data);
+    console.error('???�레?�리?�트 ??�� ?�패:', error);
+    console.error('?�러 ?�태:', error.response?.status);
+    console.error('?�러 메시지:', error.response?.data);
     throw error;
   }
 };
@@ -150,17 +155,17 @@ export const addSongToPlaylist = (playlistId, songData) => {
   return api.post(`playlists/${playlistId}/songs`, { song: normalized }).then(res => res.data);
 };
 
-// 플레이리스트에서 곡 삭제
+// ?�레?�리?�트?�서 �???��
 export const removeSongFromPlaylist = async (playlistId, songId) => {
   try {
-    console.log('🗑️ 곡 삭제 API 호출:', { playlistId, songId });
+    console.log('?���?�???�� API ?�출:', { playlistId, songId });
     const response = await api.delete(`playlists/${playlistId}/songs/${songId}`);
-    console.log('✅ 곡 삭제 성공:', response.data);
+    console.log('??�???�� ?�공:', response.data);
     return response.data;
   } catch (error) {
-    console.error('❌ 곡 삭제 실패:', error);
-    console.error('에러 상태:', error.response?.status);
-    console.error('에러 메시지:', error.response?.data);
+    console.error('??�???�� ?�패:', error);
+    console.error('?�러 ?�태:', error.response?.status);
+    console.error('?�러 메시지:', error.response?.data);
     throw error;
   }
 };
@@ -183,6 +188,34 @@ export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res =>
 
 // Spotify Integration APIs
 export const searchTracks = (query) => api.get(`spotify/search?q=${encodeURIComponent(query)}`).then(res => res.data);
+
+// Spotify Auth (PKCE) - Phase B
+export const exchangeSpotifyCode = ({ code, code_verifier, redirect_uri, userId }) =>
+  api.post('spotify/auth/token', { code, code_verifier, redirect_uri, userId }).then(r => r.data);
+export const refreshSpotifyToken = ({ refreshTokenEnc, userId }) =>
+  api.post('spotify/auth/refresh', { refreshTokenEnc, userId }).then(r => r.data);
+export const getSpotifyPremiumStatus = (userId) => api.get('spotify/auth/premium-status', { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const getSpotifyProfile = (userId) => api.get('spotify/me', { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const revokeSpotifySession = (userId) => api.post('spotify/auth/revoke', { userId }).then(r => r.data);
+
+// Playback Control (remote full-track preparation) – REST proxy (backend handles access token)
+export const getPlaybackState = (userId) => api.get('spotify/playback/state', { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const playRemote = ({ userId, uris, context_uri, position_ms, device_id }) =>
+  api.put('spotify/playback/play', { uris, context_uri, position_ms, device_id }, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const pauseRemote = (userId) => api.put('spotify/playback/pause', {}, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const nextRemote = (userId) => api.post('spotify/playback/next', {}, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const previousRemote = (userId) => api.post('spotify/playback/previous', {}, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const seekRemote = ({ userId, position_ms }) => api.put('spotify/playback/seek', { position_ms }, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const setRemoteVolume = ({ userId, volume_percent }) => api.put('spotify/playback/volume', { volume_percent }, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const getRemoteDevices = (userId) => api.get('spotify/me/devices', { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const transferRemotePlayback = ({ userId, device_id, play = true }) =>
+  api.put('spotify/playback/transfer', { device_id, play }, { headers: { 'x-user-id': userId }}).then(r => r.data);
+
+// Playback History APIs
+export const startPlaybackHistory = ({ userId, track, playbackSource }) =>
+  api.post('spotify/playback/history/start', { userId, track, playbackSource }, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const completePlaybackHistory = ({ userId, historyId, positionMs, durationMs }) =>
+  api.post('spotify/playback/history/complete', { userId, historyId, positionMs, durationMs }, { headers: { 'x-user-id': userId }}).then(r => r.data);
 
 // Song Like APIs
 export const toggleLikeSong = (songIdOrSpotifyId, songPayload) =>
@@ -241,6 +274,24 @@ const apiService = {
   
   // Spotify
   searchTracks,
+  exchangeSpotifyCode,
+  refreshSpotifyToken,
+  getSpotifyPremiumStatus,
+  getSpotifyProfile,
+  revokeSpotifySession,
+  // Remote playback control
+  getPlaybackState,
+  playRemote,
+  pauseRemote,
+  nextRemote,
+  previousRemote,
+  seekRemote,
+  setRemoteVolume,
+  getRemoteDevices,
+  transferRemotePlayback,
+  // Playback history
+  startPlaybackHistory,
+  completePlaybackHistory,
   toggleLikeSong,
   getMyLikedSongs,
   
@@ -252,6 +303,10 @@ const apiService = {
   // Utilities
   testConnection,
   
+  // Password Reset (new flow)
+  requestPasswordReset: (email) => api.post('users/password-reset/request', { email }).then(r => r.data),
+  verifyPasswordResetCode: ({ email, code, newPassword }) => api.post('users/password-reset/verify', { email, code, newPassword }).then(r => r.data),
+  
   // Internal utilities (for debugging)
   _config: CONFIG,
   _apiUrl: API_URL,
@@ -259,3 +314,4 @@ const apiService = {
 };
 
 export default apiService;
+

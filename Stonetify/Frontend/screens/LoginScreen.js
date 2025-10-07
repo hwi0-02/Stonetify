@@ -7,22 +7,23 @@ import AuthInput from '../components/auth/AuthInput';
 import AuthButton from '../components/auth/AuthButton';
 import { LinearGradient } from 'expo-linear-gradient';
 import apiService from '../services/apiService';
-import utils from '../utils'; // 공통 유틸리티 import
+import utils from '../utils'; // 공통 ?�틸리티 import
+import Constants from 'expo-constants';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('연결 확인 중...');
+  const [connectionStatus, setConnectionStatus] = useState('서버 연결 확인 중...');
 
   const dispatch = useDispatch();
   const { status, error } = useSelector((state) => state.auth);
 
   useEffect(() => {
-    // 터널 모드 감지 함수
+  // 터널 모드 감지 함수
     const isTunnelMode = () => {
       if (Platform.OS === 'web') {
-        const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
-        // HTTPS 터널 모드 감지
+        const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
+  // HTTPS 터널 모드 감지
         return currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
       }
       
@@ -30,22 +31,22 @@ const LoginScreen = ({ navigation }) => {
       return hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'));
     };
 
-    // 터널 모드에서는 Mixed Content 에러를 방지하기 위해 연결 테스트 완전 스킵
+  // 터널 모드에서 Mixed Content 오류를 방지하기 위해 연결 테스트 스킵
     if (isTunnelMode()) {
       if (Platform.OS === 'web') {
-        setConnectionStatus('웹 터널 모드 (모바일 앱 권장)');
+  setConnectionStatus('웹 터널 모드 (모바일 권장)');
       } else {
-        setConnectionStatus('터널 모드');
+  setConnectionStatus('터널 모드');
       }
     } else {
-      // 로컬 모드에서만 API 연결 상태 확인
+  // 로컬 모드에서 API 연결 상태 확인
       checkApiConnection();
     }
   }, []);
 
   const checkApiConnection = async () => {
     try {
-      const result = await apiService.testConnection();
+      await apiService.testConnection();
       setConnectionStatus('서버 연결됨');
     } catch (error) {
       setConnectionStatus('서버 연결 실패');
@@ -54,19 +55,19 @@ const LoginScreen = ({ navigation }) => {
 
   useEffect(() => {
     if (status === 'failed') {
-      Alert.alert('로그인 실패', error || '서버와의 연결을 확인해주세요.');
+  Alert.alert('로그인 실패', error || '서버와의 연결을 확인해주세요.');
       dispatch(resetAuthStatus());
     }
   }, [status, error, dispatch]);
 
   const handleLogin = () => {
     if (!email || !password) {
-        Alert.alert('입력 오류', '이메일과 비밀번호를 모두 입력해주세요.');
+  Alert.alert('입력 오류', '이메일과 비밀번호를 모두 입력해주세요.');
         return;
     }
     
-    // 터널 모드에서는 연결 상태 확인을 건너뛰고 바로 로그인 시도
-    const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+  // 터널 모드에서는 연결 상태 확인 건너뛰고 바로 로그인 시도
+    const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
     const isTunnelMode = currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
     
     if (!isTunnelMode && connectionStatus === '서버 연결 실패') {
@@ -91,31 +92,31 @@ const LoginScreen = ({ navigation }) => {
           <View style={styles.connectionStatus}>
             <Ionicons 
               name={connectionStatus === '서버 연결됨' ? 'checkmark-circle' : 
-                    connectionStatus === '연결 확인 중...' ? 'time' : 'warning'} 
+                    connectionStatus === '서버 연결 확인 중...' ? 'time' : 'warning'} 
               size={16} 
               color={connectionStatus === '서버 연결됨' ? '#4CAF50' : 
-                     connectionStatus === '연결 확인 중...' ? '#FFC107' : '#F44336'} 
+                     connectionStatus === '서버 연결 확인 중...' ? '#FFC107' : '#F44336'} 
             />
             <Text style={[styles.connectionText, {
               color: connectionStatus === '서버 연결됨' ? '#4CAF50' : 
-                     connectionStatus === '연결 확인 중...' ? '#FFC107' : '#F44336'
+                     connectionStatus === '서버 연결 확인 중...' ? '#FFC107' : '#F44336'
             }]}>
               {connectionStatus}
             </Text>
-            {connectionStatus !== '서버 연결됨' && connectionStatus !== '웹 터널 모드 (모바일 앱 권장)' && connectionStatus !== '터널 모드' && (
+            {connectionStatus !== '서버 연결됨' && connectionStatus !== '웹 터널 모드 (모바일 권장)' && connectionStatus !== '터널 모드' && (
               <TouchableOpacity onPress={checkApiConnection} style={styles.retryButton}>
                 <Ionicons name="refresh" size={16} color="#1DB954" />
               </TouchableOpacity>
             )}
           </View>
 
-          {/* 웹 터널 모드 안내 */}
-          {connectionStatus === '웹 터널 모드 (모바일 앱 권장)' && (
+          {/* 터널 모드 안내 */}
+          {connectionStatus === '웹 터널 모드 (모바일 권장)' && (
             <View style={styles.tunnelWarning}>
               <Ionicons name="information-circle" size={20} color="#FFC107" />
               <Text style={styles.tunnelWarningText}>
-                웹 터널 모드에서는 보안 제한으로 인해 로그인이 제한됩니다.{'\n'}
-                모바일에서 Expo Go 앱으로 QR 코드를 스캔해주세요.
+                웹 터널 모드에서 보안 제한으로 인해 로그인이 제한될 수 있습니다.{"\n"}
+                모바일에서는 Expo Go 앱으로 QR 코드를 스캔해 접속하세요.
               </Text>
             </View>
           )}
@@ -135,6 +136,9 @@ const LoginScreen = ({ navigation }) => {
               secureTextEntry
           />
           <AuthButton title="로그인" onPress={handleLogin} loading={status === 'loading'} />
+          <TouchableOpacity style={styles.forgotPasswordLink} onPress={() => navigation.navigate('ResetPassword')}>
+            <Text style={styles.forgotPasswordText}>비밀번호를 잊으셨나요?</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
               <Text style={styles.switchText}>계정이 없으신가요? 회원가입</Text>
           </TouchableOpacity>
@@ -195,10 +199,19 @@ const styles = StyleSheet.create({
         marginBottom: 40,
     },
     switchText: {
-        color: '#8A2BE2', // 보라색 텍스트
+        color: '#8A2BE2', // 보라???�스??
         marginTop: 10,
         fontSize: 16,
-    }
+  },
+  forgotPasswordLink: {
+    marginTop: 15,
+    marginBottom: 10,
+  },
+  forgotPasswordText: {
+    color: '#1DB954',
+    fontSize: 14,
+    textAlign: 'center',
+  },
 });
 
 export default LoginScreen;

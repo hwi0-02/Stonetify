@@ -11,6 +11,8 @@ const RecentView = require('./recent_views');
 const Recommendation = require('./recommendations');
 const ShareLink = require('./share_links');
 const SongLike = require('./song_likes');
+const SpotifyToken = require('./spotify_token');
+const PlaybackHistory = require('./playback_history');
 
 module.exports = {
   User,
@@ -25,4 +27,6 @@ module.exports = {
   Recommendation,
   ShareLink
   ,SongLike
+  ,SpotifyToken
+  ,PlaybackHistory
 };

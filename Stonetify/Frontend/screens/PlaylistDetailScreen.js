@@ -115,22 +115,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     console.log('📱 Alert.alert 호출 시도...');
     setMenuVisible(false); // 메뉴를 먼저 닫아 UI 충돌 방지
 
-    if (Platform.OS === 'web') {
-      const ok = window.confirm(`"${currentPlaylist?.title || '이 플레이리스트'}"을(를) 정말로 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
-      if (ok) {
-        (async () => {
-          try {
-            await dispatch(deletePlaylist(playlistId)).unwrap();
-            navigation.navigate('Main', { screen: 'Home' });
-          } catch (error) {
-            console.error('❌ 플레이리스트 삭제 실패:', error);
-            alert('삭제 실패: ' + (error || '오류가 발생했습니다.'));
-          }
-        })();
-      }
-      return;
-    }
-
     Alert.alert(
       '⚠️ 플레이리스트 삭제',
       `"${currentPlaylist?.title || '이 플레이리스트'}"을(를) 정말로 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없으며, 플레이리스트와 모든 곡이 영구적으로 삭제됩니다.`,
@@ -193,23 +177,15 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         console.log('🗑️ 곡 제거 시작:', { playlistId: currentPlaylist.id, songId: song.id });
         await ApiService.removeSongFromPlaylist(currentPlaylist.id, song.id);
         dispatch(fetchPlaylistDetails(currentPlaylist.id));
-        if (Platform.OS === 'web') {
-          alert('곡이 플레이리스트에서 제거되었습니다.');
-        } else {
-          Alert.alert('✅ 제거 완료', '곡이 플레이리스트에서 제거되었습니다.');
-        }
+        Alert.alert('✅ 제거 완료', '곡이 플레이리스트에서 제거되었습니다.');
       } catch (error) {
         console.error('❌ 곡 제거 실패:', error);
         const msg = `곡 제거 중 오류가 발생했습니다.\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`;
-        if (Platform.OS === 'web') alert(msg); else Alert.alert('❌ 제거 실패', msg);
+        Alert.alert('❌ 제거 실패', msg);
       }
     };
 
-    if (Platform.OS === 'web') {
-      const ok = window.confirm(`"${song.name || song.title}"을(를) 플레이리스트에서 제거하시겠습니까?`);
-      if (ok) performRemove();
-      return;
-    }
+    // 모든 플랫폼에서 Alert.alert 사용
 
     Alert.alert(
       '🎵 곡 제거',
@@ -240,7 +216,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     } catch (e) {
       setSongLikes((s) => ({ ...s, [key]: prev }));
       const msg = e?.message || '곡 좋아요 처리 중 오류가 발생했습니다.';
-      if (Platform.OS === 'web') alert(msg); else Alert.alert('오류', msg);
+      Alert.alert('오류', msg);
     }
   };
   
