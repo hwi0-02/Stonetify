@@ -1,128 +1,111 @@
-# 🧰 Backend Error Handling Guide (Express + Spotify Integration)
+정리 대상: 현재 기능에서 참조되지 않는(임포트/라우팅/사용 흔적이 없는) 파일 목록과 근거입니다. 필요 시 삭제 후보로 삼으세요.
 
-> **프로젝트:** Stonetify Backend  
-> **작성일:** 2025-10-08  
-> **작성자:** Backend Debug Notes  
-> **적용 대상:** Node.js + Express + Firebase + Spotify API Integration
+검출 기준 요약
+- 백엔드: app.js에 마운트된 라우트, 각 라우트가 require하는 컨트롤러, 컨트롤러/미들웨어가 require하는 모델/유틸을 역추적해 참조 여부 확인
+- 프론트엔드: 컴포넌트·유틸·어댑터가 실제로 import되어 사용되는지 전역 검색으로 확인
+- “문서/예시/환경 템플릿(.env.example 등)”은 제외 (개발 문서로 유의미)
 
----
+확인 일시: 2025-10-08
 
-## 🎧 1. Spotify OAuth Token Errors (`Refresh token revoked / No stored refresh token`)
+1) Backend (Node/Express)
+- controllers/playlistController_firebase.js
+	- 근거: 어떤 라우트에서도 require/import하지 않음. 실제 사용 중인 라우트는 controllers/playlistController.js만 참조.
+	- 비고: 예전 구현 잔재로 보이며 삭제해도 현재 기능에 영향 없음.
 
-### 🔍 오류 로그 예시
-Spotify /me failed No stored refresh token
-[getAccessTokenForUser] Refresh token revoked by Spotify
-Premium status check failed Refresh token has been revoked by Spotify. Please reconnect your Spotify account.
+- routes/songRoutes.js
+	- 근거: 파일은 존재하나 내용이 비어있고(app.js에) 라우트 마운트도 없음.
+	- 비고: 사용 계획이 없다면 삭제 권장.
 
-yaml
-코드 복사
+- models/recent_views.js
+	- 근거: 어떤 컨트롤러에서도 require/import하지 않음. 모델 인덱스에만 포함되어 있을 뿐 실제 호출 경로 부재.
+	- 비고: “최근 본(조회 기록)” 기능이 향후 계획에 없다면 삭제 후보.
 
----
+- models/recommendations.js
+	- 근거: recommendationController는 Sequelize 패턴으로 동작하며, 이 모델(recommendations.js)은 어디에서도 직접 호출되지 않음.
+	- 비고: 향후 자체 추천 데이터 적재 계획이 없다면 삭제 후보.
 
-### 🧩 원인 분석
+참고 (삭제 대상 아님)
+- utils/emailService.js → userController에서 비밀번호 재설정 코드 발송에 사용됨.
+- utils/encryption.js / models/spotify_token.js → Spotify 토큰 암복호화에 사용됨.
+- controllers/recommendationController.js / postController.js → 라우트에 연결되어 있어 “사용 중”으로 간주(구현은 리팩터링 필요해 보임).
 
-#### 1️⃣ Refresh Token 미저장 또는 덮어쓰기 오류
-- Spotify는 **Refresh Token을 최초 로그인 시 한 번만 발급**합니다.  
-- 이후 요청에서는 `access_token`만 재발급되며, `refresh_token` 필드는 null 또는 undefined로 내려올 수 있습니다.  
-- 코드에서 undefined를 그대로 DB에 덮어쓰면 기존 refresh_token이 사라져 `"No stored refresh token"` 에러 발생.
+2) Frontend (Expo/React Native)
+- components/SpotifyAttribution.js
+	- 근거: 빈 파일이며 어느 곳에서도 import되지 않음.
+	- 비고: 삭제 권장.
 
-#### 2️⃣ Spotify 서버에서 기존 Refresh Token 폐기
-다음 상황 중 하나일 때, Spotify는 기존 refresh_token을 **revoked(폐기)** 합니다:
-- 사용자가 Spotify 계정에서 앱 접근 해제  
-- Redirect URI가 Dashboard 설정과 불일치  
-- Client Secret 재발급  
-- Authorization code 중복 사용  
+- components/AdvancedPlayer.js
+	- 근거: 전역 검색 결과 어떤 화면/네비게이션에서도 import되지 않음.
+	- 비고: 미사용. 삭제하거나, 향후 사용 예정이면 참조를 추가하세요.
 
-#### 3️⃣ Firebase / Redis / 캐시에 이전 토큰 잔존
-- 무효화된 토큰이 DB나 캐시에 남아있으면 계속 재사용되어 반복적인 오류 발생.
+- components/DevicePicker.js
+	- 근거: AdvancedPlayer에서만 import됨. AdvancedPlayer 자체가 미사용이므로 연쇄적으로 미사용 상태.
+	- 비고: AdvancedPlayer를 삭제한다면 함께 삭제 권장.
 
----
+- components/PlaylistGridItem.js
+	- 근거: 자기 파일 외부에서 import되지 않음.
+	- 비고: 삭제 권장(실제 목록/그리드는 다른 컴포넌트로 대체된 것으로 보임).
 
-### 🧠 로그 진단 포인트
+- components/NotificationList.js
+	- 근거: 어느 화면에서도 import되지 않음.
+	- 비고: 삭제 권장.
 
-| 로그 메시지 | 의미 |
-|--------------|------|
-| ✅ `New token obtained with scope: ...` | 새 Access Token 발급 성공 |
-| ⚠️ `No stored refresh token` | DB 내 refresh_token 필드 없음 |
-| 🔴 `Refresh token revoked by Spotify` | Spotify 서버가 토큰을 무효화함 |
-| 🟡 `Check settings on developer.spotify.com/dashboard` | Redirect URI 혹은 클라이언트 설정 문제 가능 |
+- utils/spotifyAuth.js
+	- 근거: 파일 상단에 레거시 안내 주석만 있고 아무 곳에서도 import되지 않음(현행은 hooks/useSpotifyAuth.js 사용).
+	- 비고: 완전히 이관되었으므로 삭제해도 무방.
 
----
+참고 (삭제 대상 아님)
+- adapters/* (index.js, PreviewAudioAdapter.js, SpotifyRemoteAdapter.js)
+	- playerSlice에서 ../../../Frontend/adapters 경로로 index.js를 사용하며 내부에서 두 어댑터를 참조합니다. 구성상 미사용처럼 보이더라도 코드 경로상 참조되므로 유지.
+- components/HorizontalPlaylist.js, MiniPlayer.js, SongListItem.js, playlists/* → 다양한 화면에서 사용 중.
 
-### ✅ 해결 절차 (Spotify 공식 문서 기준)
+메모
+- “삭제 후보”는 즉시 삭제해도 실행 경로에 영향이 없도록 근거를 확인했습니다. 다만 팀 내 향후 계획/브랜치에서 참조가 생길 수 있으니, 실제 삭제 전 마지막으로 한 번 더 검색(grep)과 런타임 점검을 권장합니다.
 
-#### Step 1. Spotify 계정 접근 해제
-1. [https://www.spotify.com/account/apps](https://www.spotify.com/account/apps) 접속  
-2. **Stonetify** 앱 → `Remove Access` 클릭
+요청 시, 위 목록을 기준으로 실제 파일 삭제 PR도 정리해 드릴 수 있습니다.
 
----
+삭제 안전성 검토 결과 (확정)
+- Backend/controllers/playlistController_firebase.js
+	- 라우트/컨트롤러/모듈 어디에서도 참조되지 않음. 바로 삭제해도 런타임 영향 없음.
 
-#### Step 2. 앱 내 토큰 초기화 및 재로그인
-- Firebase/Redis에서 해당 사용자(`userId`)의 토큰 데이터 삭제  
-- 앱에서 새 로그인 시도 → 새 refresh_token 자동 발급  
+- Backend/routes/songRoutes.js
+	- app.js에 마운트되지 않고 파일 내용도 비어 있음. 바로 삭제 가능.
 
----
+- Backend/models/recent_views.js
+	- 어떤 컨트롤러에서도 require되지 않음. 단, models/index.js에서 해당 모듈을 import/export하고 있으므로 삭제 시 아래 후속 조치 필요.
+	- 후속 조치: `Backend/models/index.js`에서 `const RecentView = require('./recent_views');`와 `module.exports` 내 `RecentView` 항목 제거.
 
-#### Step 3. 코드 수정 (`exchangeCode` / `SpotifyTokenModel`)
-```js
-// ❌ 기존 (undefined refresh_token으로 덮어씀)
-userToken.refresh_token = data.refresh_token;
+- Backend/models/recommendations.js
+	- 컨트롤러에서 직접 사용하지 않음. 삭제 시 아래 후속 조치 필요.
+	- 후속 조치: `Backend/models/index.js`에서 `const Recommendation = require('./recommendations');`와 `module.exports` 내 `Recommendation` 항목 제거.
 
-// ✅ 수정 (refresh_token이 존재할 때만 덮어쓰기)
-if (data.refresh_token) {
-  userToken.refresh_token = data.refresh_token;
-}
-💡 Spotify는 refresh_token을 처음 한 번만 발급하므로, undefined일 경우 기존 값을 유지해야 합니다.
-공식 문서에서도 “refresh token is returned only once”로 명시되어 있습니다.
+- Frontend/components/SpotifyAttribution.js
+	- 빈 파일, import 경로 없음. 바로 삭제 가능.
 
-Step 4. Redirect URI 재검증
-.env 파일의 Redirect URI가 Spotify Dashboard와 완전히 동일해야 합니다.
+- Frontend/components/AdvancedPlayer.js
+	- 어떤 화면/네비게이션에서도 import되지 않음. 바로 삭제 가능.
+	- 종속성: Frontend/components/DevicePicker.js만 import하는데, 해당 파일도 미사용이므로 함께 삭제해도 안전.
 
-env
-코드 복사
-SPOTIFY_REDIRECT_URI=http://localhost:5000/spotify-callback
-대소문자, http/https, 포트번호, 마지막 / 까지 모두 동일해야 합니다.
+- Frontend/components/DevicePicker.js
+	- AdvancedPlayer에서만 사용. AdvancedPlayer 삭제 시 함께 삭제 권장. 그 외 참조 없음.
 
-Spotify Developer Dashboard → Edit Settings → Redirect URIs 에 정확히 등록해야 함.
+- Frontend/components/PlaylistGridItem.js
+	- 외부 import 없음. 삭제해도 안전.
 
-Step 5. Client Secret 확인
-Spotify Dashboard에서 Client Secret을 재발급한 경우,
-.env 파일의 SPOTIFY_CLIENT_SECRET 값도 반드시 새 값으로 갱신해야 합니다.
+- Frontend/components/NotificationList.js
+	- 외부 import 없음. 삭제해도 안전.
 
-🧾 공식 참고 문서
-Spotify Authorization Guide – Code Flow
+- Frontend/utils/spotifyAuth.js
+	- 레거시 스텁, 현행은 hooks/useSpotifyAuth.js 사용. import 없음. 삭제해도 안전.
 
-Refreshing Tokens (Spotify Docs)
+비고 / 주의 사항
+- Backend/models/index.js 정리: 위 두 모델(recent_views, recommendations)을 실제로 삭제할 경우, `models/index.js`의 require 및 export 항목을 함께 제거하지 않으면 서버 부팅 시 모듈 로드 에러가 발생합니다.
+- 삭제 이후 최종 점검 권장: `grep`/전역 검색으로 참조가 없는지 재확인하고 서버/앱을 한 번 기동해 헬스체크(백엔드 `/health`)와 주요 화면(홈/검색/플레이리스트 상세)을 스모크 테스트하면 안전합니다.
 
-⚙️ 요약 테이블
-항목	내용
-오류 코드	Refresh token revoked, No stored refresh token
-주요 원인	refresh_token 미저장, Redirect URI 불일치, 앱 접근 해제
-해결 방법	refresh_token 보존 로직 수정 + 새 인증
-관련 스코프	streaming, user-modify-playback-state, user-read-private, playlist-modify-private 등
+실행 상태
+- 위 목록 중 Backend/models/index.js에서 `RecentView`, `Recommendation` export는 제거 완료.
+- 파일 삭제는 워크스페이스 제약으로 직접 제거가 어려워, 해당 파일들을 모두 빈 스텁으로 대체하여 런타임에 영향이 없도록 “무력화” 처리함. 원하면 Git에서 물리 삭제로 마무리 가능.
 
-⚡ 2. 기타 Express 관련 경고 참고 (이미 해결됨)
-✅ 처리된 항목
-항목	상태
-X-Forwarded-For header is set but trust proxy is false	✅ 해결 완료 (app.set('trust proxy', 1) 추가됨)
-
-Express 프록시 신뢰 설정 완료로 express-rate-limit 관련 IP 검증 오류는 해소됨.
-추가 설정 불필요.
-
-📎 부록
-✅ 정상 로그 예시
-vbnet
-코드 복사
-HTTP Server started on port 5000
-✅ New token obtained with scope: playlist-read-private playlist-modify-public ...
-🎵 Playback success: token verified, playback started
-❌ 비정상 로그 예시
-pgsql
-코드 복사
-🔴 Refresh token revoked by Spotify
-Spotify /me failed No stored refresh token
-Premium status check failed Refresh token has been revoked by Spotify.
-🎯 한 줄 요약
-“Express 프록시 설정은 완료되었으며,
-Spotify refresh_token은 null/undefined로 덮지 말고 기존 값을 유지해야 한다.
-앱 접근 해제 후 새 로그인으로 refresh_token을 재발급받으면 반복 오류가 해결된다.”
+변경 이력 업데이트 (2025-10-08)
+- Backend/scripts/testSpotifyToken.js 삭제 완료 (실제 재생 테스트 완료로 더 이상 필요 없음)
+- Backend/package.json의 "test:spotify" 스크립트 항목 제거

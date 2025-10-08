@@ -7,8 +7,6 @@ const LikedPlaylist = require('./liked_playlists');
 const Post = require('./post');
 const PostLike = require('./post_likes');
 const Follow = require('./follows');
-const RecentView = require('./recent_views');
-const Recommendation = require('./recommendations');
 const ShareLink = require('./share_links');
 const SongLike = require('./song_likes');
 const SpotifyToken = require('./spotify_token');
@@ -23,8 +21,6 @@ module.exports = {
   Post,
   PostLike,
   Follow,
-  RecentView,
-  Recommendation,
   ShareLink
   ,SongLike
   ,SpotifyToken
