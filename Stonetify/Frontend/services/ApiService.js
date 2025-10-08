@@ -5,12 +5,12 @@ import { Platform } from 'react-native';
 
 // ?�경 ?�정 ?�합
 const CONFIG = {
-  LOCAL_IP: '192.168.219.105',
+  LOCAL_IP: '192.168.219.101',
   BACKEND_PORT: 5000,
   PROXY_PORT: 3001,
   TIMEOUT: 15000,
   RETRY_DELAY: 1000,
-  PRODUCTION_API: 'http://192.168.219.105:5000/api/',
+  PRODUCTION_API: 'http://192.168.219.101:5000/api/',
 };
 
 // ?�경�?API URL ?�정 (최적?�된 버전)
@@ -230,10 +230,10 @@ export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res =>
 export const searchTracks = (query) => api.get(`spotify/search?q=${encodeURIComponent(query)}`).then(res => res.data);
 
 // Spotify Auth (PKCE) - Phase B
-export const exchangeSpotifyCode = ({ code, code_verifier, redirect_uri, userId }) =>
-  api.post('spotify/auth/token', { code, code_verifier, redirect_uri, userId }).then(r => r.data);
-export const refreshSpotifyToken = ({ refreshTokenEnc, userId }) =>
-  api.post('spotify/auth/refresh', { refreshTokenEnc, userId }).then(r => r.data);
+export const exchangeSpotifyCode = ({ code, code_verifier, redirect_uri, userId, client_id }) =>
+  api.post('spotify/auth/token', { code, code_verifier, redirect_uri, userId, client_id }).then(r => r.data);
+export const refreshSpotifyToken = ({ refreshTokenEnc, userId, client_id }) =>
+  api.post('spotify/auth/refresh', { refreshTokenEnc, userId, client_id }).then(r => r.data);
 export const getSpotifyPremiumStatus = (userId) => api.get('spotify/auth/premium-status', { headers: { 'x-user-id': userId }}).then(r => r.data);
 export const getSpotifyProfile = (userId) => api.get('spotify/me', { headers: { 'x-user-id': userId }}).then(r => r.data);
 export const revokeSpotifySession = (userId) => api.post('spotify/auth/revoke', { userId }).then(r => r.data);

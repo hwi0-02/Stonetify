@@ -38,7 +38,7 @@ if (missingFirebase.length) {
 const { db } = require('./config/firebase');
 
 const app = express();
-
+app.set('trust proxy', 1);
 // CORS 설정 개선 (터널 모드 지원)
 const corsOptions = {
   origin: function (origin, callback) {
@@ -80,6 +80,112 @@ app.use('/api/playlists', require('./routes/playlistRoutes'));
 app.use('/api/posts', require('./routes/postRoutes'));
 app.use('/api/spotify', require('./routes/spotifyRoutes'));
 app.use('/api/recommendations', require('./routes/recommendationRoutes'));
+
+// Spotify OAuth redirect helper (PKCE bridge for Expo / web auth flows)
+app.get('/spotify-callback', (req, res) => {
+  const fallbackUri = process.env.SPOTIFY_APP_REDIRECT || 'stonetify://spotify-callback';
+  const fallbackJson = JSON.stringify(fallbackUri);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Spotify Authorization</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #121212; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { text-align: center; padding: 32px 28px; max-width: 480px; border-radius: 16px; background: rgba(18, 18, 18, 0.85); box-shadow: 0 20px 55px rgba(0, 0, 0, 0.55); border: 1px solid rgba(255,255,255,0.08); }
+    h1 { font-size: 1.5rem; margin-bottom: 12px; }
+    p { margin: 0 0 16px 0; line-height: 1.5; color: rgba(255,255,255,0.72); }
+    a.button { display: inline-block; margin-top: 8px; padding: 10px 14px; border-radius: 10px; background: #1DB954; color: #000; text-decoration: none; font-weight: 600; }
+    .hint { font-size: 0.85rem; color: rgba(255,255,255,0.55); margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Spotify authorization complete</h1>
+    <p>You can return to Stonetify. If it doesn't happen automatically, tap the button below.</p>
+    <a id="open-app" class="button" href="#">Open Stonetify</a>
+    <div class="hint">If the app doesn't open, copy this code page URL and try again from the app.</div>
+  </main>
+  <script>
+    (function () {
+      var search = window.location.search.slice(1);
+      var hash = window.location.hash.slice(1);
+      var payload = search || hash ? (search + (hash ? '&' + hash : '')) : '';
+      var message = 'expo-auth-session#' + window.location.href;
+      var ua = (navigator.userAgent || '').toLowerCase();
+
+      function safePost(target) {
+        try {
+          if (target && typeof target.postMessage === 'function') {
+            target.postMessage(message, '*');
+          }
+        } catch (e) {
+          console.warn('PostMessage failed:', e);
+        }
+      }
+
+      safePost(window.opener);
+      safePost(window.parent);
+      if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+        try {
+          window.ReactNativeWebView.postMessage(message);
+        } catch (e) {
+          console.warn('RN postMessage failed:', e);
+        }
+      }
+
+      function buildUrl(base) {
+        if (!base) return null;
+        try {
+          var joiner = base.indexOf('?') > -1 ? '&' : '?';
+          return payload ? (base + joiner + payload) : base;
+        } catch (_) {
+          return base;
+        }
+      }
+
+      var fallback = ${fallbackJson}; // e.g., 'stonetify://spotify-callback'
+      var schemeUrl = (fallback && fallback.toLowerCase() !== 'none') ? buildUrl(fallback) : null;
+
+      // Android intent fallback for cases where custom scheme is blocked
+      var androidIntentUrl = null;
+      try {
+        var pkg = ua.includes('expo') ? 'host.exp.exponent' : 'com.yourcompany.stonetify';
+        androidIntentUrl = 'intent://spotify-callback' + (payload ? ('?' + payload) : '') + '#Intent;scheme=stonetify;package=' + pkg + ';end';
+      } catch (_) {}
+
+      // Wire up the visible button so user can manually trigger
+      var btn = document.getElementById('open-app');
+      if (btn) {
+        var manualTarget = schemeUrl || androidIntentUrl || fallback || '#';
+        btn.setAttribute('href', manualTarget);
+        btn.addEventListener('click', function() {
+          try { window.location.href = manualTarget; } catch (e) {}
+        });
+      }
+
+      // Try programmatic deep link shortly after load
+      setTimeout(function() {
+        try {
+          if (schemeUrl) {
+            window.location.href = schemeUrl;
+          } else if (androidIntentUrl) {
+            window.location.href = androidIntentUrl;
+          }
+        } catch (e) {
+          console.warn('Programmatic deep link failed:', e);
+        }
+      }, 100);
+
+      // Attempt to close if we were a popup (may be blocked if not script-opened)
+      setTimeout(function () { try { window.close(); } catch (_) {} }, 1500);
+    })();
+  </script>
+</body>
+</html>`;
+  res.status(200).type('html').send(html);
+});
 
 // Firebase 연결 확인
 console.log('🔥 Firebase Realtime Database 연결됨');

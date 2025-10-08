@@ -2,10 +2,12 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDispatch, useSelector } from 'react-redux';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { getMe, logout } from '../store/slices/authSlice';
 import { fetchMyPlaylists } from '../store/slices/playlistSlice';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
+import { playTrackWithPlaylist } from '../store/slices/playerSlice';
+import { useSpotifyAuth } from '../hooks/useSpotifyAuth';
 import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { showToast } from '../utils/toast';
@@ -13,11 +15,14 @@ import { exchangeSpotifyCode, getPremiumStatus, fetchSpotifyProfile, clearSpotif
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
-const ProfileScreen = ({ navigation }) => {
+const ProfileScreen = ({ navigation, route }) => {
     const dispatch = useDispatch();
     const { user } = useSelector((state) => state.auth);
     const { userPlaylists, status } = useSelector((state) => state.playlist);
     const spotify = useSelector((state) => state.spotify);
+    const userId = user?.id || user?.userId;
+    // Spotify 인증 훅 사용 (입력: userId, 효과: 인증 플로우 관리)
+    const { connectSpotify } = useSpotifyAuth(userId);
 
     useEffect(() => {
         // 사용자 정보 및 플레이리스트 로드
@@ -30,6 +35,33 @@ const ProfileScreen = ({ navigation }) => {
     if (!user) {
         return <View style={styles.centered}><ActivityIndicator size="large" color="#8A2BE2" /></View>;
     }
+
+    // 라우트 파라미터로 온 postConnect가 있고 아직 연결 안 됐다면 자동 연결 시도
+    useEffect(() => {
+        if (!spotify?.accessToken && route?.params?.postConnect) {
+            // 새 함수: 자동 연결 시도 (입력 없음, 효과: Spotify 인증 플로우 시작)
+            connectSpotify();
+        }
+    }, [route?.params?.postConnect, spotify?.accessToken, connectSpotify]);
+
+    // 연결 성공 후 postConnect 액션 처리 (전체곡 재생)
+    useEffect(() => {
+        if (spotify?.accessToken && route?.params?.postConnect?.action === 'playAll') {
+            const playlist = Array.isArray(route.params.postConnect.playlist) ? route.params.postConnect.playlist : [];
+            if (playlist.length) {
+                (async () => {
+                    try {
+                        await dispatch(playTrackWithPlaylist({ playlist }));
+                        navigation.navigate('Player');
+                    } catch (e) {
+                        showToast('재생을 시작하지 못했습니다.');
+                    } finally {
+                        try { navigation.setParams({ postConnect: undefined }); } catch (_) {}
+                    }
+                })();
+            }
+        }
+    }, [spotify?.accessToken, route?.params?.postConnect, dispatch, navigation]);
 
     const resolveRedirectCandidates = () => {
         const candidates = [];
@@ -90,7 +122,7 @@ const ProfileScreen = ({ navigation }) => {
         try {
             // 기존 Spotify 세션 완전히 제거 (새로운 scope로 재인증 필요)
             console.log('[SpotifyAuth] Clearing any existing Spotify session before new login...');
-            await dispatch(clearSpotifySession());
+            await dispatch(clearSpotifySession({ reason: 'proactive_reauth' }));
             await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
             
             const clientId = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
@@ -290,8 +322,8 @@ const ProfileScreen = ({ navigation }) => {
                         <Text style={styles.primaryActionText}>새 플레이리스트</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.secondaryActionButton} onPress={handleConnectSpotify}>
-                        <Ionicons name="logo-spotify" size={18} color={spotify?.isPremium ? '#1DB954' : '#ffffff'} />
+                    <TouchableOpacity style={styles.secondaryActionButton} onPress={connectSpotify}>
+                        <FontAwesome5 name="spotify" size={18} color={spotify?.isPremium ? '#1DB954' : '#ffffff'} />
                         <Text style={styles.secondaryActionText}>{spotify?.isPremium ? 'Spotify 연결됨' : 'Spotify 연결'}</Text>
                     </TouchableOpacity>
                 </View>

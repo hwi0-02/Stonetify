@@ -254,7 +254,7 @@ export const playTrack = createAsyncThunk(
         
         // Import and dispatch clearSpotifySession
         const { clearSpotifySession } = await import('./spotifySlice');
-        dispatch(clearSpotifySession());
+        dispatch(clearSpotifySession({ reason: 'revoked' }));
         try {
           await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
         } catch (storageError) {

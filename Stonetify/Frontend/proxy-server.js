@@ -14,13 +14,13 @@ app.use(cors({
 
 // 프록시 설정
 const proxy = createProxyMiddleware({
-  target: 'http://192.168.219.105:5000',
+  target: 'https://3611c1f6a55b.ngrok-free.app',
   changeOrigin: true,
   pathRewrite: {
     '^/proxy': '', // /proxy 경로를 제거하고 백엔드로 전달
   },
   onProxyReq: (proxyReq, req, res) => {
-    console.log(`🔄 Proxy: ${req.method} ${req.originalUrl} -> http://192.168.219.105:5000${req.originalUrl.replace('/proxy', '')}`);
+  console.log(`🔄 Proxy: ${req.method} ${req.originalUrl} -> https://3611c1f6a55b.ngrok-free.app${req.originalUrl.replace('/proxy', '')}`);
   },
   onProxyRes: (proxyRes, req, res) => {
     // HTTPS 환경에서도 작동하도록 헤더 설정
@@ -42,7 +42,7 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'CORS Proxy Server is running',
-    target: 'http://192.168.219.105:5000'
+  target: 'https://3611c1f6a55b.ngrok-free.app'
   });
 });
 
@@ -50,6 +50,6 @@ const PORT = process.env.PROXY_PORT || 3001;
 
 app.listen(PORT, () => {
   console.log(`🌐 CORS Proxy Server running on port ${PORT}`);
-  console.log(`📡 Proxying requests to: http://192.168.219.105:5000`);
+  console.log(`📡 Proxying requests to: https://3611c1f6a55b.ngrok-free.app`);
   console.log(`🔗 Usage: http://localhost:${PORT}/proxy/api/...`);
 });

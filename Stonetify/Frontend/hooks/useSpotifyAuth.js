@@ -14,7 +14,7 @@ import {
   revokeSpotify,
 } from '../store/slices/spotifySlice';
 
-// Ensure the auth session is properly finalized (web-only requirement)
+// ✅ Web용 세션 정리
 WebBrowser.maybeCompleteAuthSession();
 
 const DEFAULT_SCOPES = [
@@ -34,32 +34,41 @@ const DEFAULT_SCOPES = [
 
 const resolveClientId = () =>
   process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
-    || process.env.SPOTIFY_CLIENT_ID
-    || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
-    || Constants.expoConfig?.extra?.spotifyClientId
-    || null;
+  || process.env.SPOTIFY_CLIENT_ID
+  || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
+  || Constants.expoConfig?.extra?.spotifyClientId
+  || null;
 
+// ✅ Expo Go 환경 감지
 const isExpoGo = () => Constants.appOwnership === 'expo';
 
+/**
+ * 🔧 buildRedirectUri 수정 요약:
+ * - Expo Go일 때는 proxy redirect (https://auth.expo.dev/@user/app)
+ * - Dev client / ngrok / standalone일 때는 명시적인 redirect URI 우선
+ * - 반환되는 redirectUri가 backend와 Spotify Dashboard에 등록된 URI와 **항상 일치**해야 함
+ */
 const buildRedirectUri = () => {
-  const override = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI
-    || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI
-    || Constants.expoConfig?.extra?.spotifyRedirectUri;
-
-  if (override) {
-    return override;
+  if (isExpoGo()) {
+    return AuthSession.makeRedirectUri({ useProxy: true });
   }
 
-  return AuthSession.makeRedirectUri({
-    scheme: 'stonetify',
-    path: 'spotify-callback',
-    useProxy: isExpoGo(),
-  });
+  // ✅ 명시적 override 우선
+  const override =
+    process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ||
+    Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ||
+    Constants.expoConfig?.extra?.spotifyRedirectUri;
+
+  if (override) return override.trim();
+
+  // ✅ 기본값: ngrok 사용 시 수동으로 맞추기
+  return 'https://3611c1f6a55b.ngrok-free.app/spotify-callback';
 };
 
 export function useSpotifyAuth(userId) {
   const dispatch = useDispatch();
   const spotifyState = useSelector((state) => state.spotify);
+
   const discovery = AuthSession.useAutoDiscovery('https://accounts.spotify.com');
   const clientId = useMemo(resolveClientId, []);
   const redirectUri = useMemo(buildRedirectUri, []);
@@ -69,20 +78,23 @@ export function useSpotifyAuth(userId) {
       console.log('[SpotifyAuth] Using redirect URI:', redirectUri);
     }
   }, [redirectUri]);
+
   const hasUser = !!userId;
   const responseHandledRef = useRef();
   const lastErrorRef = useRef(null);
+  const successHandledRef = useRef(false);
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
       clientId: clientId ?? undefined,
       scopes: DEFAULT_SCOPES,
       usePKCE: true,
-      redirectUri,
+      redirectUri, // ✅ 반드시 backend와 동일해야 함
     },
-    discovery,
+    discovery
   );
 
+  // 에러 토스트 처리
   useEffect(() => {
     if (spotifyState.authError && spotifyState.authError !== lastErrorRef.current) {
       lastErrorRef.current = spotifyState.authError;
@@ -90,12 +102,17 @@ export function useSpotifyAuth(userId) {
     }
   }, [spotifyState.authError]);
 
+  // 인증 결과 처리
   useEffect(() => {
     if (!response || !hasUser) return;
     if (responseHandledRef.current === response) return;
+
     responseHandledRef.current = response;
 
     if (response.type === 'success') {
+      successHandledRef.current = true;
+      try { WebBrowser.dismissBrowser(); } catch (_) {}
+
       const code = response.params?.code;
       const codeVerifier = request?.codeVerifier;
 
@@ -104,11 +121,13 @@ export function useSpotifyAuth(userId) {
         return;
       }
 
+      // ✅ dispatch 시 redirect_uri를 프론트 기준이 아니라 backend에서 사용하는 값과 동일하게 보냄
       dispatch(exchangeSpotifyCode({
         code,
         code_verifier: codeVerifier,
-        redirect_uri: redirectUri,
+        redirect_uri: redirectUri, // 반드시 Spotify Dashboard에 등록된 것과 일치해야 함
         userId,
+        client_id: clientId,
       }))
         .unwrap()
         .then(async () => {
@@ -121,49 +140,47 @@ export function useSpotifyAuth(userId) {
           showToast(message);
         });
     } else if (response.type === 'dismiss' || response.type === 'cancel') {
-      showToast('Spotify 로그인이 취소되었습니다.');
+      if (!successHandledRef.current) {
+        showToast('Spotify 로그인이 취소되었습니다.');
+      }
     } else if (response.type === 'error') {
       const message = response.error?.message || 'Spotify 인증 중 오류가 발생했습니다.';
-      showToast(message);
+      if (!successHandledRef.current) {
+        showToast(message);
+      }
     }
   }, [response, request, redirectUri, dispatch, userId, hasUser]);
 
+  // 로그인 시도
   const connectSpotify = useCallback(async () => {
-    if (!clientId) {
-      showToast('Spotify Client ID가 설정되지 않았습니다.');
-      return;
-    }
-    if (!hasUser) {
-      showToast('로그인이 필요합니다.');
-      return;
-    }
-    if (!request) {
-      showToast('Spotify 로그인 준비 중입니다. 잠시 후 다시 시도해주세요.');
-      return;
-    }
+    successHandledRef.current = false;
 
-  await dispatch(clearSpotifySession());
-  await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
+    if (!clientId) return showToast('Spotify Client ID가 설정되지 않았습니다.');
+    if (!hasUser) return showToast('로그인이 필요합니다.');
+    if (!request) return showToast('Spotify 로그인 준비 중입니다. 잠시 후 다시 시도해주세요.');
 
-    const useProxy = isExpoGo();
+    await dispatch(clearSpotifySession({ reason: 'proactive_reauth' }));
+    await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
+
     try {
       const result = await promptAsync({
-        useProxy,
+        useProxy: isExpoGo(),
         showInRecents: true,
       });
 
       if (result?.type === 'dismiss' || result?.type === 'cancel') {
-        showToast('Spotify 로그인이 취소되었습니다.');
+        if (!successHandledRef.current) showToast('Spotify 로그인이 취소되었습니다.');
       } else if (result?.type === 'error') {
         const message = result.error?.message || 'Spotify 인증을 시작할 수 없습니다.';
-        showToast(message);
+        if (!successHandledRef.current) showToast(message);
       }
     } catch (err) {
       const message = err?.message || 'Spotify 인증 창을 여는 중 오류가 발생했습니다.';
-      showToast(message);
+      if (!successHandledRef.current) showToast(message);
     }
   }, [clientId, hasUser, request, dispatch, promptAsync]);
 
+  // 연결 해제
   const disconnectSpotify = useCallback(async () => {
     if (!hasUser) return;
     try {

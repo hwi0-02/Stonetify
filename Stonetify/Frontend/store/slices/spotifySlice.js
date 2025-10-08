@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import * as apiService from '../../services/apiService';
 
 const initialState = {
@@ -45,7 +46,11 @@ export const refreshSpotifyToken = createAsyncThunk(
     const state = thunkAPI.getState().spotify;
     if (!state.refreshTokenEnc) return thunkAPI.rejectWithValue('리프레시 토큰 없음');
     try {
-      const data = await apiService.refreshSpotifyToken({ refreshTokenEnc: state.refreshTokenEnc, userId: thunkAPI.getState().auth.user?.id || 'anon' });
+      const clientId = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
+        || process.env.SPOTIFY_CLIENT_ID
+        || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
+        || Constants.expoConfig?.extra?.spotifyClientId;
+      const data = await apiService.refreshSpotifyToken({ refreshTokenEnc: state.refreshTokenEnc, userId: thunkAPI.getState().auth.user?.id || 'anon', client_id: clientId });
       return data;
     } catch (e) {
       return thunkAPI.rejectWithValue('Spotify 토큰 갱신 실패');
@@ -100,15 +105,22 @@ const spotifySlice = createSlice({
         state.searchResults = [];
         state.status = 'idle';
     },
-    clearSpotifySession: (state) => {
-      // Clear all Spotify auth state when token is revoked
+    // Clear all Spotify auth state
+    // input: action.payload?.reason ('revoked' | 'proactive_reauth' | string)
+    clearSpotifySession: (state, action) => {
+      const reason = action?.payload?.reason || 'unknown';
+      // Always clear local auth state
       state.accessToken = null;
       state.refreshTokenEnc = null;
       state.tokenExpiry = null;
       state.isPremium = false;
       state.error = null;
       state.requiresReauth = true;
-      console.log('🔴 [spotifySlice] Spotify session cleared due to token revocation');
+      if (reason === 'revoked') {
+        console.log('🔴 [spotifySlice] Spotify session cleared (token revoked)');
+      } else {
+        console.log(`🧹 [spotifySlice] Spotify session cleared (${reason})`);
+      }
     },
     resetSpotifyReauthFlag: (state) => {
       state.requiresReauth = false;

@@ -48,6 +48,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const { playlistId } = route.params;
   const { currentPlaylist, status, likedPlaylists } = useSelector((state) => state.playlist);
   const { user } = useSelector((state) => state.auth);
+  const spotify = useSelector((state) => state.spotify);
   
   const [menuVisible, setMenuVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -106,6 +107,22 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
 
     try {
+      // If Spotify full-track requires auth, route to Profile to connect then auto-play
+      const needsSpotify = !spotify?.accessToken || !spotify?.isPremium;
+      if (needsSpotify) {
+        navigation.navigate('Main', {
+          screen: 'Profile',
+          params: {
+            postConnect: {
+              action: 'playAll',
+              // Pass minimal data needed to start playback
+              playlist: currentPlaylist.songs,
+            }
+          }
+        });
+        return;
+      }
+
       await dispatch(playTrackWithPlaylist({ playlist: currentPlaylist.songs }));
       navigation.navigate('Player');
     } catch (error) {

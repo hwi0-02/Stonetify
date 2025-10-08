@@ -199,7 +199,7 @@ export const CONSTANTS = {
   
   // 네트워크 설정
   NETWORK: {
-    LOCAL_IP: '192.168.219.105',
+    LOCAL_IP: '192.168.219.101',
     BACKEND_PORT: 5000,
     PROXY_PORT: 3001,
   },

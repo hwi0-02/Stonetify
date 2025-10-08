@@ -1,6 +1,6 @@
 const admin = require('firebase-admin');
 
-// Firebase ?�비??계정 ??(?�경변?�에??가?�오�?
+// Firebase 서비스 계정 정보 (환경변수에서 가져오기)
 const serviceAccount = {
   type: 'service_account',
   project_id: process.env.FIREBASE_PROJECT_ID,
@@ -39,9 +39,14 @@ if (initOk && !admin.apps.length) {
   }
 }
 
+if (!initOk) {
+  console.warn('[Firebase] Falling back to in-memory data store (tokens will reset on restart).');
+}
+
+
 const db = initOk ? admin.database() : { ref: () => ({ push: () => ({ set: async () => {}, key: 'mock' }), once: async () => ({ exists: () => false }), update: async () => {}, remove: async () => {} }) };
 
-// 컬렉???�름 ?�수
+// 컬렉션 이름 상수
 const COLLECTIONS = {
   USERS: 'users',
   PLAYLISTS: 'playlists',
@@ -60,9 +65,9 @@ const COLLECTIONS = {
   PLAYBACK_HISTORY: 'playback_history'
 };
 
-// Firebase Realtime Database ?�퍼 ?�래??
+// Firebase Realtime Database 헬퍼 클래스
 class RealtimeDBHelpers {
-  // 문서 ?�성
+  // 문서 생성
   static async createDocument(collection, data) {
     const ref = db.ref(collection).push();
     await ref.set({
@@ -72,18 +77,18 @@ class RealtimeDBHelpers {
     return ref.key;
   }
 
-  // ID�?문서 조회
+  // ID로 문서 조회
   static async getDocumentById(collection, id) {
     const snapshot = await db.ref(`${collection}/${id}`).once('value');
     return snapshot.exists() ? snapshot.val() : null;
   }
 
-  // 문서 ?�데?�트
+  // 문서 업데이트
   static async updateDocument(collection, id, data) {
     await db.ref(`${collection}/${id}`).update(data);
   }
 
-  // 문서 ??��
+  // 문서 삭제
   static async deleteDocument(collection, id) {
     await db.ref(`${collection}/${id}`).remove();
   }
@@ -105,7 +110,7 @@ class RealtimeDBHelpers {
     return documents;
   }
 
-  // 조건?�로 문서 조회
+  // 조건으로 문서 조회
   static async queryDocuments(collection, field, value) {
     const snapshot = await db.ref(collection).orderByChild(field).equalTo(value).once('value');
     if (!snapshot.exists()) return [];
@@ -122,7 +127,7 @@ class RealtimeDBHelpers {
     return documents;
   }
 
-  // ?�렬??문서 조회
+  // 문서 정렬 조회
   static async getDocumentsSorted(collection, field, order = 'asc', limit = null) {
     let query = db.ref(collection).orderByChild(field);
     
@@ -143,7 +148,7 @@ class RealtimeDBHelpers {
     return results;
   }
 
-  // 복합 조건 조회 (?�라?�언???�이???�터�?
+  // 복합 조건 조회 (AND 조건)
   static async queryDocumentsMultiple(collection, conditions) {
     const allDocs = await this.getAllDocuments(collection);
     
@@ -179,5 +184,6 @@ module.exports = {
   db,
   admin,
   COLLECTIONS,
-  RealtimeDBHelpers
+  RealtimeDBHelpers,
+   isFirebaseReady: initOk
 };

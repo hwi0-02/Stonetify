@@ -4,7 +4,7 @@
     "slug": "Stonetify",
     "version": "1.0.0",
     "scheme": "stonetify",
-    "owner": "hwi0-02",
+    "owner": "hwi0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "dark",
@@ -43,7 +43,16 @@
       "expo-web-browser"
     ],
     "extra": {
-      "spotifyClientId": "84d1bbffeb7e419088d64740c137100e"
+      "spotifyClientId": "84d1bbffeb7e419088d64740c137100e",
+
+  
+      "EXPO_PUBLIC_SPOTIFY_REDIRECT_URI": "stonetify://redirect",
+      "spotifyRedirectUri": "stonetify://redirect",
+      "backendRedirectUri": "https://3611c1f6a55b.ngrok-free.app/spotify-callback",
+
+      "eas": {
+        "projectId": "Stonetify"
+      }
     }
   }
 }

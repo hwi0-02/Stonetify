@@ -21,26 +21,17 @@ const SPOTIFY_API_BASE_URL = 'https://api.spotify.com/v1';
 // In-memory short-lived access token cache: { userId: { accessToken, expiresAt } }
 const accessCache = new Map();
 
-function requireEnv(name){
-  if(!process.env[name]) throw new Error(`${name} env var missing`);
-  return process.env[name];
-}
-
-function prepareTokenRequest(params) {
+function prepareTokenRequest(params, clientIdOverride) {
   if (!(params instanceof URLSearchParams)) {
     throw new Error('prepareTokenRequest expects URLSearchParams');
   }
-  const clientId = requireEnv('SPOTIFY_CLIENT_ID');
-  if (!params.has('client_id')) {
-    params.append('client_id', clientId);
-  }
+  const envId = process.env.SPOTIFY_CLIENT_ID;
+  const clientId = clientIdOverride || envId || params.get('client_id');
+  if (!clientId) throw new Error('Spotify client_id is missing');
+  if (!params.get('client_id')) params.append('client_id', clientId);
+  // PKCE: do not set Authorization header; body client_id only
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  if (clientSecret) {
-    const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
-    headers.Authorization = `Basic ${basic}`;
-  }
-  return headers;
+  return { headers, clientId };
 }
 
 async function getUserId(req){
@@ -107,13 +98,19 @@ async function getAccessTokenForUser(userId){
   const params = new URLSearchParams();
   params.append('grant_type','refresh_token');
   params.append('refresh_token', refreshToken);
-  const headers = prepareTokenRequest(params);
+  const { headers } = prepareTokenRequest(params, rec.client_id);
 
   try {
-    const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { 
-      headers
-    });
-    const { access_token, expires_in } = tokenResp.data;
+    const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+    const { access_token, expires_in, refresh_token: newRefresh, scope } = tokenResp.data || {};
+    // Persist rotated refresh token, if provided
+    if (newRefresh) {
+      try {
+        await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || rec.scope, { historyLimit: 5, maxPerHour: 12, clientId: rec.client_id || process.env.SPOTIFY_CLIENT_ID || null });
+      } catch (e) {
+        console.warn('[Playback:getAccessTokenForUser] Failed to persist rotated refresh token:', e.message);
+      }
+    }
     accessCache.set(userId, { accessToken: access_token, expiresAt: Date.now() + (expires_in*1000) });
     return access_token;
   } catch (error) {
