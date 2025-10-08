@@ -12,6 +12,8 @@ const initialState = {
   tokenExpiry: null, // epoch ms
   isPremium: false,
   requiresReauth: false,
+  authStatus: 'idle',
+  authError: null,
 };
 
 // ❗ EXPORT 추가
@@ -35,7 +37,12 @@ export const exchangeSpotifyCode = createAsyncThunk(
       await AsyncStorage.removeItem('spotifyNeedsReauth');
       return data;
     } catch (e) {
-      return thunkAPI.rejectWithValue('Spotify 코드 교환 실패');
+      const message = e?.response?.data?.message
+        || e?.response?.data?.error_description
+        || e?.response?.data?.error
+        || e?.message
+        || 'Spotify 코드 교환 실패';
+      return thunkAPI.rejectWithValue(message);
     }
   }
 );
@@ -116,6 +123,8 @@ const spotifySlice = createSlice({
       state.isPremium = false;
       state.error = null;
       state.requiresReauth = true;
+      state.authStatus = 'idle';
+      state.authError = null;
       if (reason === 'revoked') {
         console.log('🔴 [spotifySlice] Spotify session cleared (token revoked)');
       } else {
@@ -139,12 +148,22 @@ const spotifySlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
+      .addCase(exchangeSpotifyCode.pending, (state) => {
+        state.authStatus = 'loading';
+        state.authError = null;
+      })
       .addCase(exchangeSpotifyCode.fulfilled, (state, action) => {
+        state.authStatus = 'succeeded';
+        state.authError = null;
         state.accessToken = action.payload.accessToken;
         state.refreshTokenEnc = action.payload.refreshTokenEnc;
-        state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000; // renew 60s earlier
+  state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000; // renew 60s earlier
         state.isPremium = action.payload.isPremium;
         state.requiresReauth = false;
+      })
+      .addCase(exchangeSpotifyCode.rejected, (state, action) => {
+        state.authStatus = 'failed';
+        state.authError = action.payload || 'Spotify 코드 교환 실패';
       })
       .addCase(refreshSpotifyToken.fulfilled, (state, action) => {
         state.accessToken = action.payload.accessToken;

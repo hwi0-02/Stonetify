@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
@@ -48,12 +47,37 @@ const isExpoGo = () => Constants.appOwnership === 'expo';
  * - Dev client / ngrok / standalone일 때는 명시적인 redirect URI 우선
  * - 반환되는 redirectUri가 backend와 Spotify Dashboard에 등록된 URI와 **항상 일치**해야 함
  */
-const buildRedirectUri = () => {
-  if (isExpoGo()) {
-    return AuthSession.makeRedirectUri({ useProxy: true });
+const getProjectNameForProxy = () => {
+  const explicitOwner = Constants?.expoConfig?.owner;
+  const explicitSlug = Constants?.expoConfig?.slug;
+  if (explicitOwner && explicitSlug) {
+    return `@${explicitOwner}/${explicitSlug}`;
   }
 
-  // ✅ 명시적 override 우선
+  const manifest2 = Constants?.manifest2;
+  const embedded = manifest2?.extra?.expoClient;
+  if (embedded?.owner && embedded?.slug) {
+    return `@${embedded.owner}/${embedded.slug}`;
+  }
+
+  const fallbackProject = embedded?.eas?.projectId || Constants?.expoConfig?.extra?.eas?.projectId;
+  return fallbackProject || undefined;
+};
+
+const buildRedirectUri = () => {
+  const scheme = Constants.expoConfig?.scheme || 'stonetify';
+  const redirectPath = Constants.expoConfig?.extra?.spotifyRedirectPath || 'redirect';
+
+  if (isExpoGo()) {
+    const projectNameForProxy = getProjectNameForProxy();
+    const proxyUri = AuthSession.makeRedirectUri({
+      useProxy: true,
+      projectNameForProxy,
+    });
+    return proxyUri;
+  }
+
+  // ✅ 명시적 override 우선 (standalone/dev client)
   const override =
     process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ||
     Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ||
@@ -61,8 +85,11 @@ const buildRedirectUri = () => {
 
   if (override) return override.trim();
 
-  // ✅ 기본값: ngrok 사용 시 수동으로 맞추기
-  return 'https://3611c1f6a55b.ngrok-free.app/spotify-callback';
+  const backendRedirect = Constants.expoConfig?.extra?.backendRedirectUri;
+  if (backendRedirect) return backendRedirect.trim();
+
+  // ✅ 최종 fallback: 커스텀 스킴
+  return `${scheme}://${redirectPath}`;
 };
 
 export function useSpotifyAuth(userId) {
@@ -76,6 +103,9 @@ export function useSpotifyAuth(userId) {
   useEffect(() => {
     if (__DEV__) {
       console.log('[SpotifyAuth] Using redirect URI:', redirectUri);
+      if (isExpoGo()) {
+        console.log('[SpotifyAuth] Expo proxy target:', getProjectNameForProxy());
+      }
     }
   }, [redirectUri]);
 
@@ -171,8 +201,18 @@ export function useSpotifyAuth(userId) {
       if (result?.type === 'dismiss' || result?.type === 'cancel') {
         if (!successHandledRef.current) showToast('Spotify 로그인이 취소되었습니다.');
       } else if (result?.type === 'error') {
-        const message = result.error?.message || 'Spotify 인증을 시작할 수 없습니다.';
-        if (!successHandledRef.current) showToast(message);
+        const rawError = result.error?.message || result.params?.error_description || result.params?.error;
+        const message = rawError || 'Spotify 인증을 시작할 수 없습니다.';
+
+        if (!successHandledRef.current) {
+          if (message.toLowerCase().includes('redirect') || message.toLowerCase().includes('configuration')) {
+            showToast(
+              `Spotify Redirect URI가 일치하지 않습니다.\n대시보드에 아래 URI를 등록했는지 확인하세요:\n${redirectUri}`
+            );
+          } else {
+            showToast(message);
+          }
+        }
       }
     } catch (err) {
       const message = err?.message || 'Spotify 인증 창을 여는 중 오류가 발생했습니다.';

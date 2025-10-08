@@ -174,20 +174,22 @@ export const setVolume = createAsyncThunk(
 
 export const playTrack = createAsyncThunk(
   'player/playTrack',
-  async (track, { dispatch, rejectWithValue }) => {
+  async (track, { dispatch, rejectWithValue, getState }) => {
     try {
       if (!track) return rejectWithValue('트랙 정보가 없습니다.');
       // Decide adapter first
       await dispatch(ensurePlaybackAdapter({ track }));
       let adapterType = getAdapterType();
       let adapter = getAdapter();
+      const reduxState = getState();
+      const preferredDeviceId = reduxState?.player?.playbackDeviceId || null;
       if (adapterType === 'preview' && !track.preview_url) {
         return rejectWithValue('이 곡은 미리듣기를 제공하지 않습니다.');
       }
       dispatch(playerSlice.actions.setLoading());
       // Try to load on the chosen adapter; if remote fails and preview is available, fallback
       try {
-        await adapter.load(track, true);
+        await adapter.load(track, true, { deviceId: adapterType === 'spotify_rest' ? preferredDeviceId : null });
       } catch (loadErr) {
         if (adapterType === 'spotify_rest' && track.preview_url) {
           const before = adapterType;

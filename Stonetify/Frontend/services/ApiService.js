@@ -240,8 +240,11 @@ export const revokeSpotifySession = (userId) => api.post('spotify/auth/revoke', 
 
 // Playback Control (remote full-track preparation) – REST proxy (backend handles access token)
 export const getPlaybackState = (userId) => api.get('spotify/playback/state', { headers: { 'x-user-id': userId }}).then(r => r.data);
-export const playRemote = ({ userId, uris, context_uri, position_ms, device_id }) =>
-  api.put('spotify/playback/play', { uris, context_uri, position_ms, device_id }, { headers: { 'x-user-id': userId }}).then(r => r.data);
+export const playRemote = ({ userId, uris, context_uri, position_ms, device_id }) => {
+  const payload = { uris, context_uri, position_ms };
+  if (device_id) payload.device_id = device_id;
+  return api.put('spotify/playback/play', payload, { headers: { 'x-user-id': userId }}).then(r => r.data);
+};
 export const pauseRemote = (userId) => api.put('spotify/playback/pause', {}, { headers: { 'x-user-id': userId }}).then(r => r.data);
 export const nextRemote = (userId) => api.post('spotify/playback/next', {}, { headers: { 'x-user-id': userId }}).then(r => r.data);
 export const previousRemote = (userId) => api.post('spotify/playback/previous', {}, { headers: { 'x-user-id': userId }}).then(r => r.data);

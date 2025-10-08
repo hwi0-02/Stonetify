@@ -22,7 +22,7 @@ const ProfileScreen = ({ navigation, route }) => {
     const spotify = useSelector((state) => state.spotify);
     const userId = user?.id || user?.userId;
     // Spotify 인증 훅 사용 (입력: userId, 효과: 인증 플로우 관리)
-    const { connectSpotify } = useSpotifyAuth(userId);
+    const { connectSpotify, redirectUri, authError } = useSpotifyAuth(userId);
 
     useEffect(() => {
         // 사용자 정보 및 플레이리스트 로드
@@ -292,6 +292,18 @@ const ProfileScreen = ({ navigation, route }) => {
                     </View>
                 )}
 
+                {__DEV__ && (
+                    <View style={styles.devInfoBox}>
+                        <Text style={styles.devInfoTitle}>Dev Redirect URI</Text>
+                        <Text style={styles.devInfoValue}>{redirectUri}</Text>
+                        {authError && authError.toLowerCase().includes('redirect') && (
+                            <Text style={styles.devInfoHint}>
+                                Spotify 대시보드에 위 URI가 등록되어 있는지 다시 확인하세요.
+                            </Text>
+                        )}
+                    </View>
+                )}
+
                 <View style={styles.profileInfo}>
                     <View style={styles.profileImageContainer}>
                         <Image
@@ -393,6 +405,33 @@ const styles = StyleSheet.create({
         color: '#e0ffe9',
         fontSize: 13,
         lineHeight: 18,
+    },
+    devInfoBox: {
+        marginHorizontal: 16,
+        marginBottom: 12,
+        padding: 12,
+        borderRadius: 10,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.1)'
+    },
+    devInfoTitle: {
+        color: '#d1d1d1',
+        fontSize: 12,
+        fontWeight: '600',
+        marginBottom: 4,
+        textTransform: 'uppercase',
+        letterSpacing: 0.6
+    },
+    devInfoValue: {
+        color: '#ffffff',
+        fontSize: 12,
+        lineHeight: 16
+    },
+    devInfoHint: {
+        color: '#f7b733',
+        fontSize: 11,
+        marginTop: 6
     },
     profileInfo: {
         alignItems: 'center',

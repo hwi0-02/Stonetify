@@ -15,8 +15,9 @@ class RestRemoteAdapter {
   async connect() {
     // no-op: backend handles token refresh
   }
-  async load(track, autoPlay = true) {
+  async load(track, autoPlay = true, options = {}) {
     this.currentTrack = track;
+    const deviceId = options?.deviceId || null;
     
     // Log full track object for debugging
     console.log('🎵 [RestRemoteAdapter] Received track object:', {
@@ -34,7 +35,8 @@ class RestRemoteAdapter {
       spotifyId: track.spotify_id || track.spotifyId,
       extractedSpotifyId: spotifyId,
       uri: track.uri,
-      finalUris: uris
+      finalUris: uris,
+      targetDeviceId: deviceId
     });
     
     if (!uris.length) {
@@ -49,7 +51,7 @@ class RestRemoteAdapter {
     }
     
     try {
-      await apiService.playRemote({ userId: this.userId, uris });
+      await apiService.playRemote({ userId: this.userId, uris, device_id: deviceId });
       if (!autoPlay) await apiService.pauseRemote(this.userId);
       this._startPolling();
     } catch (error) {

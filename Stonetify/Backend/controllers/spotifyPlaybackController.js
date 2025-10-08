@@ -178,7 +178,8 @@ exports.play = async (req,res) => {
   try {
     const userId = await getUserId(req);
     const { uris, context_uri, position_ms, device_id } = req.body || {};
-    
+    let targetDeviceId = device_id || null;
+
     console.log('🎵 [Playback][play] Request:', {
       userId,
       uris,
@@ -212,7 +213,8 @@ exports.play = async (req,res) => {
     if (uris || context_uri) {
       try {
         const devices = await spotifyRequest(userId, 'get', '/me/player/devices', null);
-        console.log('🔊 [Playback][play] Available devices:', devices?.devices?.length || 0);
+        const availableCount = devices?.devices?.length || 0;
+        console.log('🔊 [Playback][play] Available devices:', availableCount);
         
         if (!devices?.devices || devices.devices.length === 0) {
           console.warn('⚠️ [Playback][play] No active Spotify devices found');
@@ -223,10 +225,23 @@ exports.play = async (req,res) => {
           });
         }
         
-        // If no device_id specified, use the first active device
-        if (!device_id && devices.devices.length > 0) {
-          const activeDevice = devices.devices.find(d => d.is_active) || devices.devices[0];
-          console.log('🎯 [Playback][play] Using device:', activeDevice.name, activeDevice.id);
+        // Prefer explicitly requested device, fall back to active or first available as per Spotify docs
+        // https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback
+        if (targetDeviceId) {
+          const matched = devices.devices.find(d => d.id === targetDeviceId);
+          console.log('🎯 [Playback][play] Using requested device:', matched?.name || 'Unknown', targetDeviceId);
+        } else {
+          const activeDevice = devices.devices.find(d => d.is_active) || null;
+          if (activeDevice) {
+            targetDeviceId = activeDevice.id;
+            console.log('🎯 [Playback][play] Using active device:', activeDevice.name, activeDevice.id);
+          } else {
+            const firstDevice = devices.devices[0];
+            targetDeviceId = firstDevice?.id || null;
+            if (targetDeviceId) {
+              console.log('🎯 [Playback][play] Using first available device:', firstDevice.name, targetDeviceId);
+            }
+          }
         }
       } catch (deviceError) {
         // If TOKEN_REVOKED, propagate immediately
@@ -246,7 +261,7 @@ exports.play = async (req,res) => {
     console.log('📤 [Playback][play] Sending to Spotify API:', body);
     
     // Device specific endpoint uses query param
-    const qp = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
+    const qp = targetDeviceId ? `?device_id=${encodeURIComponent(targetDeviceId)}` : '';
     await spotifyRequest(userId,'put',`/me/player/play${qp}`, body);
     
     console.log('✅ [Playback][play] Success');

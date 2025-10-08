@@ -29,7 +29,7 @@ export default class PreviewAudioAdapter {
    * @param {Object} track Spotify track object (must contain preview_url)
    * @param {boolean} autoPlay
    */
-  async load(track, autoPlay = true) {
+  async load(track, autoPlay = true, _options = {}) {
     await this.dispose();
     if (!track?.preview_url) throw new Error('No preview_url');
     const { sound } = await Audio.Sound.createAsync(
