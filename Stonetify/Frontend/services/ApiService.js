@@ -79,6 +79,17 @@ api.interceptors.request.use(async (config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
+  // 🔍 Detailed logging for playback requests
+  if (config.url && config.url.includes('playback/play')) {
+    console.log('📡 [API Request] Playback Play:', {
+      url: config.url,
+      method: config.method,
+      headers: config.headers,
+      data: config.data
+    });
+  }
+  
   return config;
 }, (error) => Promise.reject(error));
 
@@ -87,6 +98,35 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    
+    // 🔍 Detailed error logging for playback requests
+    if (originalRequest?.url && originalRequest.url.includes('playback')) {
+      console.error('❌ [API Response Error]', {
+        url: originalRequest.url,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        requestData: originalRequest.data,
+        headers: originalRequest.headers
+      });
+    }
+    
+    // Handle TOKEN_REVOKED error - Spotify refresh token expired
+    if (error.response?.status === 401 && error.response?.data?.error === 'TOKEN_REVOKED') {
+      console.error('🔴 [API] Spotify token revoked - clearing session');
+      
+      // Clear all auth data
+  await AsyncStorage.multiRemove(['spotifyToken', 'spotifyRefreshToken']);
+  await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
+
+  // Enhance error with user-friendly message
+      const revokedError = new Error('Spotify 연결이 만료되었습니다. 다시 로그인해주세요.');
+      revokedError.code = 'TOKEN_REVOKED';
+      revokedError.requiresReauth = true;
+      revokedError.originalError = error;
+      
+      return Promise.reject(revokedError);
+    }
     
     // ?�트?�크 ?�류 ?�시??로직
     if ((error.code === 'NETWORK_ERROR' || error.code === 'ECONNABORTED') && !originalRequest._retry) {

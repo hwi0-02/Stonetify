@@ -87,6 +87,12 @@ class SpotifyTokenModel {
     });
   }
 
+  static async markRevoked(userId) {
+    // Alias for revoke - marks token as revoked when Spotify rejects it
+    console.log('🔴 [SpotifyTokenModel] Marking token as revoked for user:', userId);
+    return this.revoke(userId);
+  }
+
   static decryptRefresh(record) {
     if (!record || !record.refresh_token_enc) return null;
     return decrypt(record.refresh_token_enc);

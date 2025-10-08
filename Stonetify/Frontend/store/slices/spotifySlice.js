@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as apiService from '../../services/apiService';
 
 const initialState = {
@@ -9,6 +10,7 @@ const initialState = {
   refreshTokenEnc: null,
   tokenExpiry: null, // epoch ms
   isPremium: false,
+  requiresReauth: false,
 };
 
 // ❗ EXPORT 추가
@@ -29,6 +31,7 @@ export const exchangeSpotifyCode = createAsyncThunk(
   async (payload, thunkAPI) => {
     try {
       const data = await apiService.exchangeSpotifyCode(payload);
+      await AsyncStorage.removeItem('spotifyNeedsReauth');
       return data;
     } catch (e) {
       return thunkAPI.rejectWithValue('Spotify 코드 교환 실패');
@@ -96,6 +99,19 @@ const spotifySlice = createSlice({
     clearSearchResults: (state) => {
         state.searchResults = [];
         state.status = 'idle';
+    },
+    clearSpotifySession: (state) => {
+      // Clear all Spotify auth state when token is revoked
+      state.accessToken = null;
+      state.refreshTokenEnc = null;
+      state.tokenExpiry = null;
+      state.isPremium = false;
+      state.error = null;
+      state.requiresReauth = true;
+      console.log('🔴 [spotifySlice] Spotify session cleared due to token revocation');
+    },
+    resetSpotifyReauthFlag: (state) => {
+      state.requiresReauth = false;
     }
   },
   extraReducers: (builder) => {
@@ -116,11 +132,13 @@ const spotifySlice = createSlice({
         state.refreshTokenEnc = action.payload.refreshTokenEnc;
         state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000; // renew 60s earlier
         state.isPremium = action.payload.isPremium;
+        state.requiresReauth = false;
       })
       .addCase(refreshSpotifyToken.fulfilled, (state, action) => {
         state.accessToken = action.payload.accessToken;
         state.refreshTokenEnc = action.payload.refreshTokenEnc;
         state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000;
+        state.requiresReauth = false;
       })
       .addCase(getPremiumStatus.fulfilled, (state, action) => {
         state.isPremium = action.payload.isPremium;
@@ -133,9 +151,10 @@ const spotifySlice = createSlice({
         state.refreshTokenEnc = null;
         state.tokenExpiry = null;
         state.isPremium = false;
+        state.requiresReauth = true;
       });
   },
 });
 
-export const { clearSearchResults } = spotifySlice.actions;
+export const { clearSearchResults, clearSpotifySession, resetSpotifyReauthFlag } = spotifySlice.actions;
 export default spotifySlice.reducer;

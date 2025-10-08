@@ -34,13 +34,29 @@ const initialState = {
   lastAdapterSwitch: null,
 };
 
-const getTrackId = (track) => track?.id ?? track?.spotify_id ?? track?.song_id ?? track?.track_id ?? track?.spotifyId ?? track?.songId ?? null;
+// Prioritize spotify_id over Firebase internal id to avoid 400 errors from Spotify API
+const getTrackId = (track) => track?.spotify_id ?? track?.spotifyId ?? track?.id ?? track?.song_id ?? track?.track_id ?? track?.songId ?? null;
 
 const normalizeTrack = (track) => {
   if (!track) return null;
   const id = getTrackId(track);
   const previewUrl = track.preview_url ?? track.previewUrl ?? track.previewURL ?? track.preview;
-  const uri = track.uri ?? track.spotify_uri ?? track.spotifyUri ?? track.spotifyURI ?? null;
+  let uri = track.uri ?? track.spotify_uri ?? track.spotifyUri ?? track.spotifyURI ?? null;
+  
+  // Construct Spotify URI from ID if missing (required for spotify_rest adapter)
+  if (!uri && id && !id.startsWith('-')) {
+    // Only construct URI if ID looks like a Spotify ID (not Firebase ID starting with '-')
+    uri = id.startsWith('spotify:') ? id : `spotify:track:${id}`;
+  }
+  
+  console.log('🔄 [normalizeTrack]', {
+    originalId: track?.id,
+    spotifyId: track?.spotify_id,
+    extractedId: id,
+    uri: uri,
+    trackName: track?.name || track?.title
+  });
+  
   return {
     ...track,
     id: id ?? track?.id ?? null,
@@ -230,6 +246,28 @@ export const playTrack = createAsyncThunk(
       return track;
     } catch (error) {
       console.error('재생 오류:', error);
+      
+      // Handle TOKEN_REVOKED error specifically
+      if (error.code === 'TOKEN_REVOKED' || error.requiresReauth) {
+        console.error('🔴 [playTrack] Spotify token revoked');
+        analyticsTrack('spotify_token_revoked', { trackId: track?.id });
+        
+        // Import and dispatch clearSpotifySession
+        const { clearSpotifySession } = await import('./spotifySlice');
+        dispatch(clearSpotifySession());
+        try {
+          await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
+        } catch (storageError) {
+          console.warn('Failed to persist spotifyNeedsReauth flag', storageError.message);
+        }
+        
+        return rejectWithValue({
+          message: 'Spotify 연결이 만료되었습니다.\n프로필에서 Spotify를 다시 연결해주세요.',
+          code: 'TOKEN_REVOKED',
+          requiresReauth: true
+        });
+      }
+      
       analyticsTrack('play_error', { message: error.message, trackId: track?.id, adapter: getAdapterType() });
       return rejectWithValue('곡 재생에 실패했습니다.');
     }

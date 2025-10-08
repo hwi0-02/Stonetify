@@ -99,6 +99,21 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     navigation.navigate('Player');
   };
 
+  const handlePlayAll = async () => {
+    if (!currentPlaylist?.songs?.length) {
+      Alert.alert('알림', '플레이리스트에 곡이 없습니다.');
+      return;
+    }
+
+    try {
+      await dispatch(playTrackWithPlaylist({ playlist: currentPlaylist.songs }));
+      navigation.navigate('Player');
+    } catch (error) {
+      const message = typeof error === 'string' ? error : error?.message || '재생에 실패했습니다.';
+      Alert.alert('재생 실패', message);
+    }
+  };
+
   // ❗ [수정됨] 최종 삭제 핸들러 로직
   const handleDeletePlaylist = () => {
     console.log('🚨 handleDeletePlaylist 함수 호출됨!');
@@ -280,23 +295,12 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         
         {currentPlaylist.songs && currentPlaylist.songs.length > 0 && (
-          <TouchableOpacity 
-            style={styles.playButton} 
-            onPress={() => {
-              const firstSong = currentPlaylist.songs[0];
-              if (firstSong.preview_url) {
-                dispatch(playTrackWithPlaylist({ 
-                  track: firstSong, 
-                  playlist: currentPlaylist.songs, 
-                  index: 0 
-                }));
-                navigation.navigate('Player');
-              } else {
-                Alert.alert('알림', '이 트랙에는 미리 듣기가 없습니다.');
-              }
-            }}
+          <TouchableOpacity
+            style={styles.playAllButton}
+            onPress={handlePlayAll}
           >
-            <Ionicons name="play-circle" size={60} color="#1DB954" />
+            <Ionicons name="play" size={18} color="#121212" style={styles.playAllIcon} />
+            <Text style={styles.playAllText}>전체재생</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -518,8 +522,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  playButton: {
-    marginTop: 0,
+  playAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1DB954',
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginLeft: 12,
+  },
+  playAllIcon: {
+    marginRight: 8,
+  },
+  playAllText: {
+    color: '#121212',
+    fontWeight: '700',
+    fontSize: 16,
   },
   emptyContainer: {
     alignItems: 'center',

@@ -8,6 +8,15 @@ const PlaybackHistoryModel = require('../models/playback_history');
 
 function validateTrack(track){
   if(!track || !track.id || !track.name) throw new Error('track.id and track.name required');
+  
+  // Validate that track.id is a Spotify ID format (22 alphanumeric chars or spotify:track: URI)
+  // Firebase IDs start with '-' and contain underscores, which are invalid for Spotify
+  const isSpotifyUri = track.id?.startsWith('spotify:track:');
+  const isSpotifyId = /^[a-zA-Z0-9]{22}$/.test(track.id);
+  
+  if (!isSpotifyUri && !isSpotifyId) {
+    throw new Error(`Invalid Spotify track ID format: ${track.id}. Expected 22-char alphanumeric ID or spotify:track: URI`);
+  }
 }
 
 exports.start = async (req,res) => {

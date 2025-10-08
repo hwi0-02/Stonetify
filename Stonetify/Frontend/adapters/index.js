@@ -17,11 +17,65 @@ class RestRemoteAdapter {
   }
   async load(track, autoPlay = true) {
     this.currentTrack = track;
-    const uris = track.uri ? [track.uri] : (track.id ? [`spotify:track:${track.id}`] : []);
-    if (!uris.length) throw new Error('Track missing URI/id');
-    await apiService.playRemote({ userId: this.userId, uris });
-    if (!autoPlay) await apiService.pauseRemote(this.userId);
-    this._startPolling();
+    
+    // Log full track object for debugging
+    console.log('🎵 [RestRemoteAdapter] Received track object:', {
+      fullTrack: track,
+      allKeys: track ? Object.keys(track) : []
+    });
+    
+    // Extract Spotify ID (prioritize spotify_id over id to avoid Firebase IDs)
+    const spotifyId = track.spotify_id || track.spotifyId || (track.id && !track.id.startsWith('-') ? track.id : null);
+    const uris = track.uri ? [track.uri] : (spotifyId ? [`spotify:track:${spotifyId}`] : []);
+    
+    console.log('🎵 [RestRemoteAdapter] Loading track:', {
+      trackName: track.name || track.title,
+      trackId: track.id,
+      spotifyId: track.spotify_id || track.spotifyId,
+      extractedSpotifyId: spotifyId,
+      uri: track.uri,
+      finalUris: uris
+    });
+    
+    if (!uris.length) {
+      console.error('❌ [RestRemoteAdapter] Track missing valid Spotify URI/ID:', track);
+      throw new Error('Track missing valid Spotify URI/ID');
+    }
+    
+    // Validate URI format before sending
+    if (uris[0].includes('-O_') || uris[0].startsWith('spotify:track:-')) {
+      console.error('❌ [RestRemoteAdapter] Invalid Firebase ID detected in URI:', uris[0]);
+      throw new Error(`Invalid track ID format detected: ${uris[0]}`);
+    }
+    
+    try {
+      await apiService.playRemote({ userId: this.userId, uris });
+      if (!autoPlay) await apiService.pauseRemote(this.userId);
+      this._startPolling();
+    } catch (error) {
+      // Handle TOKEN_REVOKED error
+      if (error.code === 'TOKEN_REVOKED' || error.response?.data?.error === 'TOKEN_REVOKED') {
+        console.error('🔴 [RestRemoteAdapter] Spotify token revoked');
+        const revokedError = new Error(
+          'Spotify 연결이 만료되었습니다.\n\n' +
+          '프로필 화면에서 Spotify를 다시 연결해주세요.'
+        );
+        revokedError.code = 'TOKEN_REVOKED';
+        revokedError.requiresReauth = true;
+        throw revokedError;
+      }
+      
+      // Handle NO_ACTIVE_DEVICE error specifically
+      if (error.response?.data?.error === 'NO_ACTIVE_DEVICE') {
+        const userFriendlyError = new Error(
+          'Spotify 재생 장치를 찾을 수 없습니다.\n\n' +
+          '휴대폰, 컴퓨터 또는 스피커에서 Spotify 앱을 먼저 열어주세요.'
+        );
+        userFriendlyError.code = 'NO_ACTIVE_DEVICE';
+        throw userFriendlyError;
+      }
+      throw error;
+    }
   }
   async play() { await apiService.playRemote({ userId: this.userId }); this.resumePolling(); }
   async pause() { await apiService.pauseRemote(this.userId); this.suspendPolling(); }

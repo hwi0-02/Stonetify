@@ -178,6 +178,20 @@ const playlistSlice = createSlice({
       .addCase(fetchPlaylistDetails.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.currentPlaylist = action.payload;
+        
+        // Log to verify songs have spotify_id
+        if (action.payload?.songs) {
+          console.log('📋 [fetchPlaylistDetails] Received songs:', action.payload.songs.length);
+          action.payload.songs.forEach((song, idx) => {
+            if (!song.spotify_id && !song.spotifyId) {
+              console.warn(`⚠️ [fetchPlaylistDetails] Song ${idx} missing spotify_id:`, {
+                id: song.id,
+                title: song.title || song.name,
+                allKeys: Object.keys(song)
+              });
+            }
+          });
+        }
       })
       .addCase(fetchPlaylistDetails.rejected, (state, action) => {
         state.status = 'failed';

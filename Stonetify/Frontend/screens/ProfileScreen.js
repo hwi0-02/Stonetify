@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { getMe, logout } from '../store/slices/authSlice';
@@ -8,7 +9,7 @@ import HorizontalPlaylist from '../components/HorizontalPlaylist';
 import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { showToast } from '../utils/toast';
-import { exchangeSpotifyCode, getPremiumStatus, fetchSpotifyProfile } from '../store/slices/spotifySlice';
+import { exchangeSpotifyCode, getPremiumStatus, fetchSpotifyProfile, clearSpotifySession } from '../store/slices/spotifySlice';
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
@@ -30,60 +31,215 @@ const ProfileScreen = ({ navigation }) => {
         return <View style={styles.centered}><ActivityIndicator size="large" color="#8A2BE2" /></View>;
     }
 
-        const handleConnectSpotify = async () => {
-            try {
-                const clientId = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
-                    || process.env.SPOTIFY_CLIENT_ID
-                    || Constants.expoConfig?.extra?.spotifyClientId
-                    || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_CLIENT_ID;
-                const inExpoGo = Constants.appOwnership === 'expo';
-                const redirectUri = AuthSession.makeRedirectUri({ useProxy: inExpoGo, scheme: 'stonetify' });
-                console.log('[SpotifyAuth] inExpoGo:', inExpoGo, 'redirectUri:', redirectUri);
-                const scopes = [
-                    'user-read-playback-state',
-                    'user-modify-playback-state',
-                    'user-read-currently-playing',
-                    'streaming'
-                ];
-                if (!clientId) {
-                    showToast('Spotify Client ID가 설정되지 않았습니다. EXPO_PUBLIC_SPOTIFY_CLIENT_ID를 설정해 주세요.');
+    const resolveRedirectCandidates = () => {
+        const candidates = [];
+        const seen = new Set();
+        
+        // Expo Go 감지를 더 신뢰성있게 수행
+        const isExpoGo = Constants.appOwnership === 'expo' || 
+                        Constants.executionEnvironment === 'storeClient' ||
+                        !Constants.expoConfig?.ios?.bundleIdentifier;
+
+        const addCandidate = (uri, useProxy, source) => {
+            if (!uri) return;
+            const trimmed = uri.trim();
+            if (!trimmed || seen.has(trimmed)) return;
+            candidates.push({ redirectUri: trimmed, useProxy, source });
+            seen.add(trimmed);
+        };
+
+        console.log('[SpotifyAuth] Environment detection:', {
+            appOwnership: Constants.appOwnership,
+            executionEnvironment: Constants.executionEnvironment,
+            isExpoGo,
+        });
+
+        // 1. 환경 변수 최우선
+        const envRedirect = (process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI
+            || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI
+            || Constants.expoConfig?.extra?.spotifyRedirectUri)?.trim();
+
+        if (envRedirect) {
+            const isProxyUrl = envRedirect.startsWith('https://auth.expo.dev/');
+            addCandidate(envRedirect, isProxyUrl, 'env_override');
+            console.log('[SpotifyAuth] Using env override:', envRedirect, 'useProxy:', isProxyUrl);
+        }
+
+        // 2. Expo Go인 경우 프록시 URL만 사용 (동의 후 복귀를 위해 필수)
+        if (isExpoGo) {
+            const expoProxyUri = AuthSession.makeRedirectUri({ 
+                useProxy: true, 
+                scheme: 'stonetify'
+            });
+            addCandidate(expoProxyUri, true, 'expo_proxy');
+            console.log('[SpotifyAuth] ✅ Expo Go detected, MUST use proxy:', expoProxyUri);
+        } else {
+            // 3. 스탠드얼론/Dev Client인 경우 커스텀 스킴 우선
+            const customSchemeUri = AuthSession.makeRedirectUri({ 
+                useProxy: false, 
+                scheme: 'stonetify' 
+            });
+            addCandidate(customSchemeUri, false, 'custom_scheme');
+            console.log('[SpotifyAuth] Standalone build detected, using custom scheme:', customSchemeUri);
+        }
+
+        return candidates;
+    };
+
+    const handleConnectSpotify = async () => {
+        try {
+            // 기존 Spotify 세션 완전히 제거 (새로운 scope로 재인증 필요)
+            console.log('[SpotifyAuth] Clearing any existing Spotify session before new login...');
+            await dispatch(clearSpotifySession());
+            await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
+            
+            const clientId = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
+                || process.env.SPOTIFY_CLIENT_ID
+                || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
+                || Constants.expoConfig?.extra?.spotifyClientId;
+
+            const candidates = resolveRedirectCandidates();
+            if (!candidates.length) {
+                showToast('Spotify 리디렉트 URI를 구성할 수 없습니다. 설정을 확인해주세요.');
+                return;
+            }
+
+            const scopes = [
+                'user-read-email',
+                'user-read-private',
+                'user-read-playback-state',
+                'user-modify-playback-state',
+                'user-read-currently-playing',
+                'user-library-read',
+                'user-library-modify',
+                'playlist-read-private',
+                'playlist-read-collaborative',
+                'playlist-modify-public',
+                'playlist-modify-private',
+                'streaming'
+            ];
+            if (!clientId) {
+                showToast('Spotify Client ID가 설정되지 않았습니다. EXPO_PUBLIC_SPOTIFY_CLIENT_ID를 설정해 주세요.');
+                return;
+            }
+            const discovery = {
+                authorizationEndpoint: 'https://accounts.spotify.com/authorize',
+                tokenEndpoint: 'https://accounts.spotify.com/api/token',
+            };
+            let authContext = null;
+            let lastErrorMessage = null;
+
+            for (const candidate of candidates) {
+                try {
+                    console.log('[SpotifyAuth] ===== Attempting redirect URI =====');
+                    console.log('[SpotifyAuth] URI:', candidate.redirectUri);
+                    console.log('[SpotifyAuth] Source:', candidate.source);
+                    console.log('[SpotifyAuth] Use Proxy:', candidate.useProxy);
+                    console.log('[SpotifyAuth] Client ID:', clientId);
+                    console.log('[SpotifyAuth] =====================================');
+                    
+                    const request = new AuthSession.AuthRequest({
+                        clientId,
+                        redirectUri: candidate.redirectUri,
+                        scopes,
+                        usePKCE: true,
+                        responseType: AuthSession.ResponseType.Code,
+                    });
+                    await request.makeAuthUrlAsync(discovery);
+                    console.log('[SpotifyAuth] Auth URL prepared, opening browser...');
+
+                    // Expo Go에서는 반드시 useProxy를 명시적으로 전달
+                    const promptOptions = { 
+                        useProxy: candidate.useProxy,
+                        showInRecents: false,
+                    };
+                    
+                    console.log('[SpotifyAuth] Prompt options:', promptOptions);
+                    const res = await request.promptAsync(discovery, promptOptions);
+                    console.log('[SpotifyAuth] Auth response received:', res.type);
+
+                    if (res.type === 'success' && res.params?.code) {
+                        const resolvedRedirect = request.redirectUri || candidate.redirectUri;
+                        console.log('[SpotifyAuth] ✅ Authorization successful!');
+                        console.log('[SpotifyAuth] Code received:', res.params.code.substring(0, 10) + '...');
+                        console.log('[SpotifyAuth] Final redirect URI:', resolvedRedirect);
+                        authContext = { request, candidate: { ...candidate, redirectUri: resolvedRedirect }, res };
+                        break;
+                    }
+
+                    if (res.type === 'dismiss' || res.type === 'cancel') {
+                        console.log('[SpotifyAuth] User cancelled authorization');
+                        showToast('Spotify 연결이 취소되었습니다.');
+                        return;
+                    }
+                    
+                    if (res.type === 'locked') {
+                        console.warn('[SpotifyAuth] Browser locked, might need user interaction');
+                        continue;
+                    }
+
+                    if (res.type === 'error' || res.params?.error) {
+                        const msg = res.params?.error_description || res.params?.error || '알 수 없는 오류';
+                        lastErrorMessage = msg;
+                        console.error('[SpotifyAuth] Auth error:', msg);
+                        console.error('[SpotifyAuth] Error params:', res.params);
+                        if (msg.toLowerCase().includes('redirect') || msg.toLowerCase().includes('invalid_client')) {
+                            console.warn('[SpotifyAuth] ⚠️ Redirect URI rejected, trying next candidate...');
+                            continue;
+                        }
+                        showToast(`Spotify 연결 오류: ${msg}`);
+                        return;
+                    }
+                } catch (candidateError) {
+                    const msg = candidateError?.response?.data?.error_description
+                        || candidateError?.response?.data?.error
+                        || candidateError?.message
+                        || '알 수 없는 오류';
+                    lastErrorMessage = msg;
+                    if (msg.includes('redirect_uri') || msg.includes('invalid_client')) {
+                        console.warn('[SpotifyAuth] Redirect candidate failed:', msg);
+                        continue;
+                    }
+                    console.error('[SpotifyAuth] Unexpected error during auth', candidateError);
+                    showToast('Spotify 연결에 실패했습니다. 다시 시도해주세요.');
                     return;
                 }
-                const discovery = {
-                    authorizationEndpoint: 'https://accounts.spotify.com/authorize',
-                    tokenEndpoint: 'https://accounts.spotify.com/api/token',
-                };
-                const request = new AuthSession.AuthRequest({
-                    clientId,
-                    redirectUri,
-                    scopes,
-                    usePKCE: true,
-                    responseType: AuthSession.ResponseType.Code,
-                });
-                await request.makeAuthUrlAsync(discovery);
-                console.log('[SpotifyAuth] authUrl ready with redirectUri:', redirectUri);
-                const res = await request.promptAsync(discovery, { useProxy: inExpoGo });
-                if (res.type === 'success' && res.params?.code) {
-                    const codeVerifier = request.codeVerifier;
-                    await dispatch(exchangeSpotifyCode({ code: res.params.code, code_verifier: codeVerifier, redirect_uri: redirectUri, userId: user.id || user.userId })).unwrap();
-                    await dispatch(getPremiumStatus());
-                    await dispatch(fetchSpotifyProfile());
-                } else if (res.type === 'dismiss' || res.type === 'cancel') {
-                    showToast('Spotify 연결이 취소되었습니다.');
-                } else if (res.type === 'error' || res.params?.error) {
-                    const msg = res.params?.error_description || res.params?.error || '알 수 없는 오류';
-                    if (msg.includes('redirect_uri')) {
-                        showToast('Redirect URI 불일치입니다. Spotify 개발자 콘솔에 표시된 리디렉트 URL을 추가해 주세요.');
-                    } else if (msg.includes('invalid_client')) {
-                        showToast('Client ID가 올바르지 않습니다. 값을 다시 확인해 주세요.');
-                    } else {
-                        showToast(`Spotify 연결 오류: ${msg}`);
-                    }
-                }
-            } catch (e) {
-                showToast('Spotify 연결에 실패했습니다. 다시 시도해주세요.');
             }
-        };
+
+            if (!authContext) {
+                const detail = lastErrorMessage ? ` 상세: ${lastErrorMessage}` : '';
+                showToast(`Spotify 리디렉트 설정을 확인해주세요.${detail}`);
+                return;
+            }
+
+            const { request, candidate, res } = authContext;
+            const codeVerifier = request.codeVerifier;
+            
+            console.log('[SpotifyAuth] Exchanging code for token...');
+            console.log('[SpotifyAuth] Redirect URI for exchange:', candidate.redirectUri);
+            
+            try {
+                await dispatch(exchangeSpotifyCode({
+                    code: res.params.code,
+                    code_verifier: codeVerifier,
+                    redirect_uri: candidate.redirectUri,
+                    userId: user.id || user.userId,
+                })).unwrap();
+                await AsyncStorage.removeItem('spotifyNeedsReauth');
+                
+                console.log('[SpotifyAuth] ✅ Token exchange successful');
+                showToast('Spotify 연결 성공!');
+                
+                await dispatch(getPremiumStatus());
+                await dispatch(fetchSpotifyProfile());
+            } catch (tokenError) {
+                console.error('[SpotifyAuth] Token exchange failed:', tokenError);
+                throw tokenError;
+            }
+        } catch (e) {
+            showToast('Spotify 연결에 실패했습니다. 다시 시도해주세요.');
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -95,11 +251,20 @@ const ProfileScreen = ({ navigation }) => {
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollViewContent} showsVerticalScrollIndicator={false}>
+                {spotify.requiresReauth && (
+                    <View style={styles.spotifyNotice}>
+                        <Text style={styles.spotifyNoticeTitle}>Spotify 재연결이 필요합니다</Text>
+                        <Text style={styles.spotifyNoticeText}>
+                            Spotify 토큰이 만료되었습니다. 아래의 "Spotify 연결" 버튼으로 다시 로그인해 주세요.
+                        </Text>
+                    </View>
+                )}
+
                 <View style={styles.profileInfo}>
                     <View style={styles.profileImageContainer}>
-                        <Image 
-                            source={user.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile} 
-                            style={styles.profileImage} 
+                        <Image
+                            source={user.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile}
+                            style={styles.profileImage}
                         />
                         <View style={styles.profileBadge}>
                             <Ionicons name="person" size={16} color="#1DB954" />
@@ -124,7 +289,7 @@ const ProfileScreen = ({ navigation }) => {
                         <Ionicons name="add" size={20} color="#121212" />
                         <Text style={styles.primaryActionText}>새 플레이리스트</Text>
                     </TouchableOpacity>
-                    
+
                     <TouchableOpacity style={styles.secondaryActionButton} onPress={handleConnectSpotify}>
                         <Ionicons name="logo-spotify" size={18} color={spotify?.isPremium ? '#1DB954' : '#ffffff'} />
                         <Text style={styles.secondaryActionText}>{spotify?.isPremium ? 'Spotify 연결됨' : 'Spotify 연결'}</Text>
@@ -136,22 +301,22 @@ const ProfileScreen = ({ navigation }) => {
                     data={userPlaylists}
                     onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
                 />
-                
+
             </ScrollView>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: { 
-        flex: 1, 
-        backgroundColor: '#121212' 
+    container: {
+        flex: 1,
+        backgroundColor: '#121212'
     },
-    centered: { 
-        flex: 1, 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        backgroundColor: '#121212' 
+    centered: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#121212'
     },
     header: {
         flexDirection: 'row',
@@ -162,9 +327,9 @@ const styles = StyleSheet.create({
         paddingBottom: 20,
         backgroundColor: '#121212',
     },
-    headerTitle: { 
-        color: '#ffffff', 
-        fontSize: 28, 
+    headerTitle: {
+        color: '#ffffff',
+        fontSize: 28,
         fontWeight: '700',
         letterSpacing: -0.5,
     },
@@ -176,8 +341,29 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    profileInfo: { 
-        alignItems: 'center', 
+    spotifyNotice: {
+        marginHorizontal: 16,
+        marginTop: 24,
+        marginBottom: 12,
+        padding: 16,
+        borderRadius: 12,
+        backgroundColor: 'rgba(29, 185, 84, 0.12)',
+        borderWidth: 1,
+        borderColor: 'rgba(29, 185, 84, 0.4)',
+    },
+    spotifyNoticeTitle: {
+        color: '#1DB954',
+        fontSize: 16,
+        fontWeight: '700',
+        marginBottom: 4,
+    },
+    spotifyNoticeText: {
+        color: '#e0ffe9',
+        fontSize: 13,
+        lineHeight: 18,
+    },
+    profileInfo: {
+        alignItems: 'center',
         paddingVertical: 32,
         paddingHorizontal: 16,
     },
@@ -199,9 +385,9 @@ const styles = StyleSheet.create({
         shadowRadius: 12,
         elevation: 12,
     },
-    profileImage: { 
-        width: 140, 
-        height: 140, 
+    profileImage: {
+        width: 140,
+        height: 140,
         borderRadius: 70,
     },
     profileBadge: {
@@ -217,9 +403,9 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    displayName: { 
-        color: '#ffffff', 
-        fontSize: 36, 
+    displayName: {
+        color: '#ffffff',
+        fontSize: 36,
         fontWeight: '900',
         marginBottom: 20,
         letterSpacing: -1,
@@ -308,7 +494,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginLeft: 8,
     },
-    scrollViewContent: { 
+    scrollViewContent: {
         paddingBottom: 100,
         backgroundColor: '#121212',
     },

@@ -79,6 +79,15 @@ class Song {
     for (const playlistSong of playlistSongs) {
       const song = await this.findById(playlistSong.song_id);
       if (song) {
+        // Log to verify spotify_id is present
+        if (!song.spotify_id) {
+          console.warn('⚠️ [Song.findByPlaylistId] Song missing spotify_id:', {
+            songId: song.id,
+            title: song.title,
+            allFields: Object.keys(song)
+          });
+        }
+        
         songs.push({
           ...song,
           position: playlistSong.position,
