@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-// Removed direct expo-audio usage; routed via adapters
-import { getAdapter, getAdapterType, ensurePreviewAdapter, ensureRestRemoteAdapter } from '../../../Frontend/adapters';
+// Spotify full track only
+import { getAdapter, getAdapterType, ensureSpotifyAdapter } from '../../../Frontend/adapters';
 import { showToast } from '../../utils/toast';
 import { track as analyticsTrack } from '../../utils/analytics';
 import { startPlaybackHistory, completePlaybackHistory } from '../../services/apiService';
@@ -29,8 +29,8 @@ const initialState = {
   playbackDeviceId: null, // future Spotify device id placeholder
   playbackDeviceName: null,
   historyId: null,
-  playbackSource: 'preview', // 'preview' | 'spotify_rest' (later native 'spotify')
-  adapterType: 'preview',
+  playbackSource: 'spotify_full', // only 'spotify_full'
+  adapterType: 'spotify_rest',
   lastAdapterSwitch: null,
   isPlayerScreenVisible: false, // MiniPlayer 표시 여부 제어
 };
@@ -41,7 +41,6 @@ const getTrackId = (track) => track?.spotify_id ?? track?.spotifyId ?? track?.id
 const normalizeTrack = (track) => {
   if (!track) return null;
   const id = getTrackId(track);
-  const previewUrl = track.preview_url ?? track.previewUrl ?? track.previewURL ?? track.preview;
   let uri = track.uri ?? track.spotify_uri ?? track.spotifyUri ?? track.spotifyURI ?? null;
   
   // Construct Spotify URI from ID if missing (required for spotify_rest adapter)
@@ -61,7 +60,6 @@ const normalizeTrack = (track) => {
   return {
     ...track,
     id: id ?? track?.id ?? null,
-    preview_url: previewUrl ?? null,
     uri,
   };
 };
@@ -82,34 +80,25 @@ const findTrackIndexInQueue = (queue, track, fallbackIndex) => {
   });
 };
 
-// Adapter switch thunk – decides which adapter to use based on premium status and track availability
+// Adapter setup thunk – ensures Spotify adapter is ready
 export const ensurePlaybackAdapter = createAsyncThunk(
   'player/ensurePlaybackAdapter',
   async ({ track }, { getState, dispatch }) => {
     const state = getState();
-    const isPremium = state.spotify?.isPremium;
     const userId = state.auth?.user?.id || state.auth?.user?.userId;
-    // Conditions for remote full-track path:
-    // 1. User is premium
-    // 2. Track has a Spotify URI/id (mandatory for remote)
-    // 3. (Optional) Track lacks preview OR explicit preference for full-track
-    const wantsRemote = isPremium && (track?.uri || track?.id) && (!track?.preview_url);
+    
+    // Always use Spotify full track
+    if (!track?.uri && !track?.id) {
+      throw new Error('Track missing valid Spotify URI/ID');
+    }
+    
     const current = getAdapterType();
-    if (wantsRemote && current !== 'spotify_rest') {
-      const before = current;
-      ensureRestRemoteAdapter(userId);
-      dispatch(playerSlice.actions.adapterSwitched({ to: 'spotify_rest', from: before }));
-      analyticsTrack('adapter_switch', { to: 'spotify_rest', from: before, reason: 'no_preview_full_track', trackId: track?.id });
-      return { type: 'spotify_rest' };
+    if (current !== 'spotify_rest') {
+      ensureSpotifyAdapter(userId);
+      dispatch(playerSlice.actions.adapterSwitched({ to: 'spotify_rest', from: current }));
+      analyticsTrack('adapter_switch', { to: 'spotify_rest', from: current, reason: 'spotify_only', trackId: track?.id });
     }
-    if (!wantsRemote && current !== 'preview') {
-      const before = current;
-      ensurePreviewAdapter();
-      dispatch(playerSlice.actions.adapterSwitched({ to: 'preview', from: before }));
-      analyticsTrack('adapter_switch', { to: 'preview', from: before, reason: 'fallback_or_preview_available', trackId: track?.id });
-      return { type: 'preview' };
-    }
-    return { type: current };
+    return { type: 'spotify_rest' };
   }
 );
 
@@ -178,41 +167,25 @@ export const playTrack = createAsyncThunk(
   async (track, { dispatch, rejectWithValue, getState }) => {
     try {
       if (!track) return rejectWithValue('트랙 정보가 없습니다.');
-      // Decide adapter first
+      // Ensure Spotify adapter is ready
       await dispatch(ensurePlaybackAdapter({ track }));
-      let adapterType = getAdapterType();
-      let adapter = getAdapter();
+      const adapterType = getAdapterType();
+      const adapter = getAdapter();
       const reduxState = getState();
       const preferredDeviceId = reduxState?.player?.playbackDeviceId || null;
-      if (adapterType === 'preview' && !track.preview_url) {
-        return rejectWithValue('이 곡은 미리듣기를 제공하지 않습니다.');
+      
+      if (!adapter) {
+        return rejectWithValue('Spotify 어댑터를 초기화할 수 없습니다.');
       }
+      
       dispatch(playerSlice.actions.setLoading());
-      // Try to load on the chosen adapter; if remote fails and preview is available, fallback
-      try {
-        await adapter.load(track, true, { deviceId: adapterType === 'spotify_rest' ? preferredDeviceId : null });
-      } catch (loadErr) {
-        if (adapterType === 'spotify_rest' && track.preview_url) {
-          const before = adapterType;
-          // switch to preview and retry
-          ensurePreviewAdapter();
-          dispatch(playerSlice.actions.adapterSwitched({ to: 'preview', from: before }));
-          analyticsTrack('adapter_fallback', { from: before, to: 'preview', reason: loadErr?.message || 'remote_load_failed', trackId: track?.id });
-          showToast('풀 트랙 재생에 실패하여 미리듣기로 전환합니다.');
-          adapterType = 'preview';
-          adapter = getAdapter();
-          await adapter.load(track, true);
-        } else {
-          throw loadErr;
-        }
-      }
+      // Load track on Spotify adapter
+      await adapter.load(track, true, { deviceId: preferredDeviceId });
       // Analytics & history
       if (track.id) {
-        const hasPreview = !!track.preview_url;
         analyticsTrack('play_start', {
           trackId: track.id,
           name: track.name,
-          hasPreview,
           adapter: adapterType,
         });
         try {
@@ -221,7 +194,7 @@ export const playTrack = createAsyncThunk(
             const user = JSON.parse(userRaw);
             const userId = user?.id || user?.userId;
             if (userId) {
-              const res = await startPlaybackHistory({ userId, track: { id: track.id, name: track.name, artists: track.artists, uri: track.uri }, playbackSource: adapterType });
+              const res = await startPlaybackHistory({ userId, track: { id: track.id, name: track.name, artists: track.artists, uri: track.uri }, playbackSource: 'spotify_full' });
               dispatch(playerSlice.actions.setHistoryId(res.historyId));
             }
           }
@@ -229,7 +202,7 @@ export const playTrack = createAsyncThunk(
       }
       adapter.onStatus((status) => {
         const now = Date.now();
-        const throttle = adapterType === 'preview' ? 250 : 2500; // remote polling slower
+        const throttle = 2500; // remote polling
         if (now - lastStatusUpdate >= throttle) {
           lastStatusUpdate = now;
           dispatch(playerSlice.actions.updatePlaybackStatus({
@@ -268,6 +241,14 @@ export const playTrack = createAsyncThunk(
           message: 'Spotify 연결이 만료되었습니다.\n프로필에서 Spotify를 다시 연결해주세요.',
           code: 'TOKEN_REVOKED',
           requiresReauth: true
+        });
+      }
+      
+      // Handle NO_ACTIVE_DEVICE error specifically
+      if (error.code === 'NO_ACTIVE_DEVICE') {
+        return rejectWithValue({
+          message: error.message,
+          code: 'NO_ACTIVE_DEVICE'
         });
       }
       
@@ -486,10 +467,9 @@ export const persistPlaybackState = createAsyncThunk(
         queue: player.queue.map(t => ({
           id: t.id,
           name: t.name,
-            // keep essential fields only; include preview_url for replay
-          preview_url: t.preview_url,
           album: t.album,
           artists: t.artists,
+          uri: t.uri,
         })),
         queueIndex: player.queueIndex,
         position: player.position,
@@ -591,7 +571,7 @@ const playerSlice = createSlice({
     clearHistoryId: (state) => { state.historyId = null; },
     adapterSwitched: (state, action) => {
       state.adapterType = action.payload.to;
-      state.playbackSource = action.payload.to === 'preview' ? 'preview' : 'spotify_full';
+      state.playbackSource = 'spotify_full';
       state.lastAdapterSwitch = Date.now();
     },
     setPlayerScreenVisible: (state, action) => {
@@ -660,7 +640,7 @@ const playerSlice = createSlice({
       // sync adapterType if changed via thunk
       if (action.payload?.type && state.adapterType !== action.payload.type) {
         state.adapterType = action.payload.type;
-        state.playbackSource = action.payload.type === 'preview' ? 'preview' : 'spotify_full';
+        state.playbackSource = 'spotify_full';
       }
     });
   },

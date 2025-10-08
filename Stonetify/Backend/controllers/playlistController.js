@@ -545,7 +545,6 @@ module.exports = {
                 artist: payloadSong.artist || payloadSong.artists,
                 album: payloadSong.album || '',
                 album_cover_url: payloadSong.album_cover_url || payloadSong.albumCoverUrl || null,
-                preview_url: payloadSong.preview_url || null,
                 duration_ms: payloadSong.duration_ms || null,
                 external_urls: payloadSong.external_urls || payloadSong.external_url || null,
             };
@@ -571,7 +570,6 @@ module.exports = {
                     artists: s.artist,
                     album: s.album,
                     album_cover_url: s.album_cover_url,
-                    preview_url: s.preview_url,
                     duration_ms: s.duration_ms,
                     external_urls: s.external_urls,
                     liked_at: like.liked_at,

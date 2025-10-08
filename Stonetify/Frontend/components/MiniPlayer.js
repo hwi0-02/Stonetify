@@ -12,7 +12,7 @@ export const MINI_PLAYER_HEIGHT = 72;
 const MiniPlayer = () => {
   const dispatch = useDispatch();
   const navigation = useNavigation();
-  const { currentTrack, isPlaying, queueIndex, queue, adapterType } = useSelector(s => s.player);
+  const { currentTrack, isPlaying, queueIndex, queue } = useSelector(s => s.player);
 
   if (!currentTrack) return null;
 
@@ -36,17 +36,12 @@ const MiniPlayer = () => {
     <TouchableOpacity style={styles.container} activeOpacity={0.85} onPress={handleExpand}>
       <View style={styles.left}>
         <Image
-          source={currentTrack.album?.images?.[0]?.url ? { uri: currentTrack.album.images[0].url } : placeholderAlbum}
+          source={currentTrack.album_cover_url ? { uri: currentTrack.album_cover_url } : placeholderAlbum}
           style={styles.art}
         />
         <View style={styles.meta}>
           <Text style={styles.title} numberOfLines={1}>{currentTrack.name}</Text>
-          <View style={styles.row}>
-            <Text style={styles.artist} numberOfLines={1}>{artistText}</Text>
-            <View style={[styles.badge, adapterType === 'preview' ? styles.badgePreview : styles.badgeFull]}>
-              <Text style={styles.badgeText}>{adapterType === 'preview' ? 'Preview' : 'Full'}</Text>
-            </View>
-          </View>
+          <Text style={styles.artist} numberOfLines={1}>{artistText}</Text>
         </View>
       </View>
       <View style={styles.controls}>
@@ -75,13 +70,8 @@ const styles = StyleSheet.create({
   left: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   art: { width: 44, height: 44, borderRadius: 4, backgroundColor: '#333' },
   meta: { marginLeft: 10, flex: 1 },
-  row: { flexDirection: 'row', alignItems: 'center' },
   title: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  artist: { color: '#bbb', fontSize: 12, marginTop: 2, flexShrink: 1, maxWidth: '70%' },
-  badge: { marginLeft: 6, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  badgePreview: { backgroundColor: '#444' },
-  badgeFull: { backgroundColor: '#1DB954' },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '600' },
+  artist: { color: '#bbb', fontSize: 12, marginTop: 2 },
   controls: { flexDirection: 'row', alignItems: 'center' },
   iconBtn: { padding: 8 }
 });

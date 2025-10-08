@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TextInput, FlatList, TouchableOpacity, Modal, Alert, ActivityIndicator } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchLikedSongs, toggleLikeSongThunk, toggleLocal as toggleLikedLocal } from '../store/slices/likedSongsSlice';
+import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
 import { useNavigation, useRoute } from '@react-navigation/native'; // ❗ useRoute 추가
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/apiService';
@@ -25,12 +25,13 @@ const SearchScreen = () => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showLiked, setShowLiked] = useState(false);
-  const [likedSongs, setLikedSongs] = useState([]);
   const likedMapGlobal = useSelector(state => state.likedSongs.map);
+  const likedSongsList = useSelector(state => state.likedSongs.list);
   
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedSong, setSelectedSong] = useState(null);
   const [newlyCreatedPlaylistId, setNewlyCreatedPlaylistId] = useState(null); // ❗ 새로 추가
+  const [likeInflight, setLikeInflight] = useState({});
 
   useEffect(() => {
     dispatch(fetchMyPlaylists());
@@ -38,22 +39,7 @@ const SearchScreen = () => {
     dispatch(fetchLikedSongs());
   }, [dispatch]);
 
-  useEffect(() => {
-    if (showLiked) {
-      (async () => {
-        try {
-          setLoading(true);
-          const data = await apiService.getMyLikedSongs();
-          setLikedSongs(Array.isArray(data) ? data : []);
-          // 글로벌 likedSongs는 slice에서 관리되므로 화면용 목록만 유지
-        } catch (e) {
-          Alert.alert('오류', '좋아요한 곡을 불러오는데 실패했습니다.');
-        } finally {
-          setLoading(false);
-        }
-      })();
-    }
-  }, [showLiked]);
+  // 좋아요한 곡 화면은 Redux likedSongsSlice.list를 직접 사용합니다.
 
   const search = async (searchQuery) => {
     if (!searchQuery) {
@@ -119,7 +105,7 @@ const SearchScreen = () => {
   };
 
   const handlePlayTrack = (track) => {
-    const list = showLiked ? likedSongs : results;
+    const list = showLiked ? likedSongsList : results;
     if (!list || !list.length) return;
     const startIndex = list.findIndex(t => (t.id || t.spotify_id) === (track.id || track.spotify_id));
     if (startIndex === -1) return;
@@ -207,11 +193,11 @@ const SearchScreen = () => {
         </View>
       </View>
 
-      {loading && (showLiked ? likedSongs.length === 0 : results.length === 0) ? (
+      {loading && (showLiked ? likedSongsList.length === 0 : results.length === 0) ? (
         <ActivityIndicator style={{ marginTop: 20 }} size="large" color="#fff" />
       ) : (
         <FlatList
-          data={showLiked ? likedSongs : results}
+          data={showLiked ? likedSongsList : results}
           keyExtractor={(item, idx) => (item.id || item.spotify_id || idx).toString()}
           renderItem={({ item }) => {
             const trackKey = item.spotify_id || item.id || null;
@@ -229,22 +215,19 @@ const SearchScreen = () => {
                     Alert.alert('오류', '이 곡에는 유효한 식별자가 없어 좋아요를 처리할 수 없습니다.');
                     return;
                   }
+                  if (likeInflight[sKey]) return; // prevent rapid double taps
+                  setLikeInflight(prev => ({ ...prev, [sKey]: true }));
                   const curr = !!likedMapGlobal[sKey];
-                  // optimistic local: dispatch local toggle to update global map/list
-                  dispatch(toggleLikedLocal({ ...song, id: song.id, spotify_id: song.spotify_id }));
                   try {
                     await dispatch(toggleLikeSongThunk({ ...song, id: song.id, spotify_id: song.spotify_id })).unwrap();
-                    if (showLiked && curr) {
-                      // removing from liked list
-                      setLikedSongs((list) => list.filter(s => (s.id || s.spotify_id) !== sKey));
-                    } else if (showLiked && !curr) {
-                      // adding to liked list from liked view (rare), append
-                      setLikedSongs((list) => [{ ...song, liked_at: Date.now() }, ...list]);
-                    }
                   } catch (e) {
-                    // rollback: toggle back
-                    dispatch(toggleLikedLocal({ ...song, id: song.id, spotify_id: song.spotify_id }));
                     Alert.alert('오류', '좋아요 처리에 실패했습니다.');
+                  } finally {
+                    setLikeInflight(prev => {
+                      const next = { ...prev };
+                      delete next[sKey];
+                      return next;
+                    });
                   }
                 }}
               />

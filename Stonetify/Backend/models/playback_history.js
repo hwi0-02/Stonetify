@@ -5,7 +5,7 @@ const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
  * Playback history records for analytics & recommendations
  * Shape: {
  *  id, user_id, track_id, track_uri, track_name, artist_name,
- *  playback_source: 'preview' | 'spotify',
+ *  playback_source: 'spotify_full',
  *  started_at: number (ms epoch),
  *  ended_at: number|null,
  *  duration_played_ms: number|null,
@@ -22,7 +22,7 @@ class PlaybackHistoryModel {
       track_uri: track.uri || `spotify:track:${track.id}`,
       track_name: track.name,
       artist_name: Array.isArray(track.artists) ? track.artists.join(', ') : track.artists,
-      playback_source: playbackSource || 'preview',
+      playback_source: playbackSource || 'spotify_full',
       started_at: now,
       ended_at: null,
       duration_played_ms: null,

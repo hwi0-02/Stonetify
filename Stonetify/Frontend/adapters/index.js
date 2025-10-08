@@ -1,7 +1,5 @@
 // Adapter registry / manager
-import PreviewAudioAdapter from './PreviewAudioAdapter';
-import SpotifyRemoteAdapter from './SpotifyRemoteAdapter';
-// Lightweight REST-based remote adapter (pre-native) using backend proxy endpoints
+// Lightweight REST-based remote adapter using backend proxy endpoints
 import apiService from '../../Frontend/services/apiService';
 
 class RestRemoteAdapter {
@@ -112,16 +110,7 @@ class RestRemoteAdapter {
 }
 
 let currentAdapter = null;
-let currentType = 'preview'; // 'preview' | 'spotify'
-
-export function ensurePreviewAdapter() {
-  if (!currentAdapter || currentType !== 'preview') {
-    if (currentAdapter && currentAdapter.dispose) currentAdapter.dispose();
-    currentAdapter = new PreviewAudioAdapter();
-    currentType = 'preview';
-  }
-  return currentAdapter;
-}
+let currentType = 'spotify_rest'; // only 'spotify_rest'
 
 export function setAdapter(adapterInstance, type) {
   if (currentAdapter && currentAdapter.dispose) {
@@ -132,21 +121,12 @@ export function setAdapter(adapterInstance, type) {
 }
 
 export function getAdapter() {
-  if (!currentAdapter) return ensurePreviewAdapter();
   return currentAdapter;
 }
 
 export function getAdapterType() { return currentType; }
 
-export function ensureSpotifyAdapter(accessToken) {
-  if (currentType === 'spotify' && currentAdapter) return currentAdapter;
-  const adapter = new SpotifyRemoteAdapter();
-  adapter.connect(accessToken).catch(e => console.warn('Spotify adapter connect failed (stub)', e.message));
-  setAdapter(adapter, 'spotify');
-  return adapter;
-}
-
-export function ensureRestRemoteAdapter(userId) {
+export function ensureSpotifyAdapter(userId) {
   if (currentType === 'spotify_rest' && currentAdapter) return currentAdapter;
   const adapter = new RestRemoteAdapter(userId);
   adapter.connect();

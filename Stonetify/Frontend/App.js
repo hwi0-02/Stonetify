@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { restorePlaybackState } from './store/slices/playerSlice';
 import { useSelector, useDispatch } from 'react-redux';
 import { refreshSpotifyToken, getPremiumStatus, fetchSpotifyProfile } from './store/slices/spotifySlice';
-import { ensureSpotifyAdapter, ensurePreviewAdapter, suspendAdapterPolling, resumeAdapterPolling } from './adapters';
+import { ensureSpotifyAdapter, suspendAdapterPolling, resumeAdapterPolling } from './adapters';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 // Use sentry-expo wrapper (managed workflow friendly)
 let Sentry;
@@ -46,22 +46,16 @@ if (Sentry && !global.__SENTRY_INIT) {
 
 function CoreApp() {
   const dispatch = useDispatch();
-  const { accessToken, tokenExpiry, isPremium } = useSelector(state => state.spotify);
-  const [adapterType, setAdapterType] = useState('preview');
+  const { accessToken, tokenExpiry } = useSelector(state => state.spotify);
+  const { user } = useSelector(state => state.auth);
 
-  // Switch adapter when premium & accessToken present (stub still preview fallback inside remote)
+  // Initialize Spotify adapter when user is available
   useEffect(() => {
-    const nextType = (isPremium && accessToken) ? 'spotify' : 'preview';
-    if (nextType !== adapterType) {
-      if (nextType === 'spotify') {
-        ensureSpotifyAdapter(accessToken);
-      } else {
-        ensurePreviewAdapter();
-      }
-      setAdapterType(nextType);
-      instrumentAdapterSwitch(nextType);
+    if (user?.id) {
+      ensureSpotifyAdapter(user.id);
+      instrumentAdapterSwitch('spotify_rest');
     }
-  }, [isPremium, accessToken]);
+  }, [user?.id]);
 
   // Token refresh scheduler
   useEffect(() => {

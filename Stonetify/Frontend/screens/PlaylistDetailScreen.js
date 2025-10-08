@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists } from '../store/slices/playlistSlice';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
+import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SongListItem from '../components/SongListItem';
@@ -47,6 +48,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const dispatch = useDispatch();
   const { playlistId } = route.params;
   const { currentPlaylist, status, likedPlaylists } = useSelector((state) => state.playlist);
+  const { map: likedSongsMap } = useSelector((state) => state.likedSongs);
   const { user } = useSelector((state) => state.auth);
   const spotify = useSelector((state) => state.spotify);
   
@@ -55,12 +57,13 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [isLiked, setIsLiked] = useState(false);
-  const [songLikes, setSongLikes] = useState({});
+  const [likeInflight, setLikeInflight] = useState({});
 
   useEffect(() => {
     if (playlistId) {
       dispatch(fetchPlaylistDetails(playlistId));
       dispatch(fetchLikedPlaylists());
+      dispatch(fetchLikedSongs());
     }
   }, [dispatch, playlistId]);
 
@@ -68,27 +71,12 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     if (currentPlaylist) {
       setEditTitle(currentPlaylist.title || '');
       setEditDescription(currentPlaylist.description || '');
-  const liked = !!(likedPlaylists || []).find(p => p.id === currentPlaylist.id) || currentPlaylist.liked || false;
-  setIsLiked(liked);
-      (async () => {
-        try {
-          const likes = await ApiService.getMyLikedSongs();
-          const likedMap = {};
-          for (const l of likes || []) {
-            likedMap[l.song_id] = true;
-          }
-          const map = {};
-          for (const s of currentPlaylist.songs || []) {
-            const key = s.id || s.spotify_id;
-            map[key] = likedMap[s.id] || likedMap[key] || false;
-          }
-          setSongLikes(map);
-        } catch (e) {
-          setSongLikes({});
-        }
-      })();
+      const liked = !!(likedPlaylists || []).find(p => p.id === currentPlaylist.id) || currentPlaylist.liked || false;
+      setIsLiked(liked);
     }
   }, [currentPlaylist, likedPlaylists]);
+
+
   
   const handleEditPlaylist = () => {
     setMenuVisible(false);
@@ -240,15 +228,21 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   };
 
   const handleToggleSongLike = async (song) => {
-    const key = song.id || song.spotify_id;
-    const prev = !!songLikes[key];
-    setSongLikes((s) => ({ ...s, [key]: !prev }));
+    const key = song?.id || song?.spotify_id;
+    if (!key) return;
+    if (likeInflight[key]) return;
+    setLikeInflight(prev => ({ ...prev, [key]: true }));
     try {
-      await ApiService.toggleLikeSong(key);
+      await dispatch(toggleLikeSongThunk(song)).unwrap();
     } catch (e) {
-      setSongLikes((s) => ({ ...s, [key]: prev }));
       const msg = e?.message || '곡 좋아요 처리 중 오류가 발생했습니다.';
       Alert.alert('오류', msg);
+    } finally {
+      setLikeInflight(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
     }
   };
   
@@ -345,7 +339,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
               onRemovePress={handleRemoveSong}
               showLikeButton
               onLikePress={handleToggleSongLike}
-              liked={!!songLikes[item?.id || item?.spotify_id]}
+              liked={!!(likedSongsMap[item?.id] || likedSongsMap[item?.spotify_id])}
             />
           );
         }}
