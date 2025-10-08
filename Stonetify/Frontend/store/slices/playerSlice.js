@@ -32,6 +32,7 @@ const initialState = {
   playbackSource: 'preview', // 'preview' | 'spotify_rest' (later native 'spotify')
   adapterType: 'preview',
   lastAdapterSwitch: null,
+  isPlayerScreenVisible: false, // MiniPlayer 표시 여부 제어
 };
 
 // Prioritize spotify_id over Firebase internal id to avoid 400 errors from Spotify API
@@ -593,6 +594,9 @@ const playerSlice = createSlice({
       state.playbackSource = action.payload.to === 'preview' ? 'preview' : 'spotify_full';
       state.lastAdapterSwitch = Date.now();
     },
+    setPlayerScreenVisible: (state, action) => {
+      state.isPlayerScreenVisible = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -679,6 +683,7 @@ export const {
   setHistoryId,
   clearHistoryId,
   adapterSwitched,
+  setPlayerScreenVisible,
 } = playerSlice.actions;
 
 export default playerSlice.reducer;

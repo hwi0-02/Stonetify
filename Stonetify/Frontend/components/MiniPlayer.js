@@ -5,9 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSelector, useDispatch } from 'react-redux';
 import { pauseTrack, resumeTrack, nextTrack } from '../store/slices/playerSlice';
 import placeholderAlbum from '../assets/images/placeholder_album.png';
+import { useNavigation } from '@react-navigation/native';
 
-const MiniPlayer = ({ onExpand }) => {
+export const MINI_PLAYER_HEIGHT = 72;
+
+const MiniPlayer = () => {
   const dispatch = useDispatch();
+  const navigation = useNavigation();
   const { currentTrack, isPlaying, queueIndex, queue, adapterType } = useSelector(s => s.player);
 
   if (!currentTrack) return null;
@@ -19,13 +23,17 @@ const MiniPlayer = ({ onExpand }) => {
 
   const handleNext = () => dispatch(nextTrack());
 
+  const handleExpand = () => {
+    navigation.navigate('Player');
+  };
+
   // 안전하게 artists 처리
   const artistText = Array.isArray(currentTrack.artists)
     ? currentTrack.artists.map(a => a.name).join(', ')
     : currentTrack.artists?.name || currentTrack.artists || '';
 
   return (
-    <TouchableOpacity style={styles.container} activeOpacity={0.85} onPress={onExpand}>
+    <TouchableOpacity style={styles.container} activeOpacity={0.85} onPress={handleExpand}>
       <View style={styles.left}>
         <Image
           source={currentTrack.album?.images?.[0]?.url ? { uri: currentTrack.album.images[0].url } : placeholderAlbum}
@@ -55,15 +63,12 @@ const MiniPlayer = ({ onExpand }) => {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: '#1e1e1e',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
+    height: MINI_PLAYER_HEIGHT,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#333'
   },

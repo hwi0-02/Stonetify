@@ -1,9 +1,10 @@
 import React, { useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, ActivityIndicator, BackHandler } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { pauseTrack, resumeTrack, stopTrack, nextTrack, previousTrack, toggleRepeat, toggleShuffle, setSeekInProgress, setPosition } from '../store/slices/playerSlice';
+import { pauseTrack, resumeTrack, stopTrack, nextTrack, previousTrack, toggleRepeat, toggleShuffle, setSeekInProgress, setPosition, setPlayerScreenVisible } from '../store/slices/playerSlice';
+import { useFocusEffect } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
 
 const { width } = Dimensions.get('window');
@@ -21,8 +22,29 @@ const PlayerScreen = ({ navigation }) => {
     }
   }, [currentTrack, navigation]);
 
+  // PlayerScreen이 활성화/비활성화될 때 MiniPlayer 표시 제어
+  useFocusEffect(
+    useCallback(() => {
+      // 화면이 포커스되면 MiniPlayer 숨김
+      dispatch(setPlayerScreenVisible(true));
+
+      // Android 뒤로가기 버튼 처리
+      const onBackPress = () => {
+        navigation.goBack();
+        return true; // 기본 뒤로가기 동작 방지
+      };
+
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => {
+        // 화면이 블러되면 MiniPlayer 표시
+        dispatch(setPlayerScreenVisible(false));
+        backHandler.remove();
+      };
+    }, [dispatch, navigation])
+  );
+
   const handleClose = () => {
-    dispatch(stopTrack());
     navigation.goBack();
   };
 

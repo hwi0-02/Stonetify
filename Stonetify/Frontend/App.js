@@ -6,11 +6,11 @@ import { StatusBar } from 'expo-status-bar';
 import * as Font from 'expo-font';
 import { ActivityIndicator, View, StyleSheet, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MiniPlayer from './components/MiniPlayer';
 import { restorePlaybackState } from './store/slices/playerSlice';
 import { useSelector, useDispatch } from 'react-redux';
 import { refreshSpotifyToken, getPremiumStatus, fetchSpotifyProfile } from './store/slices/spotifySlice';
 import { ensureSpotifyAdapter, ensurePreviewAdapter, suspendAdapterPolling, resumeAdapterPolling } from './adapters';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 // Use sentry-expo wrapper (managed workflow friendly)
 let Sentry;
 try {
@@ -99,7 +99,6 @@ function CoreApp() {
   return (
     <View style={styles.appContainer}>
       <AppNavigator />
-      <MiniPlayer />
     </View>
   );
 }
@@ -137,10 +136,12 @@ export default function App() {
   }
 
   return (
-    <Provider store={store}>
-      <CoreApp />
-      <StatusBar style="light" backgroundColor="#121212" />
-    </Provider>
+    <SafeAreaProvider>
+      <Provider store={store}>
+        <CoreApp />
+        <StatusBar style="light" backgroundColor="#121212" />
+      </Provider>
+    </SafeAreaProvider>
   );
 }
 
