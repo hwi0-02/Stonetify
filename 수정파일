@@ -1,0 +1,20 @@
+백엔드 부분
+playlistController.js
+userController.js
+index.js
+user.js
+playlistRoutes.js
+userRoutes.js
+
+프론트엔드 부분
+firebaseConfig.js(새로 생성)
+AppNavigator.js
+EditProfileScreen.js(새로 생성)
+LoginScreen.js
+PlaylistDetailScreen.js
+ProfileScreen.js
+SearchScreen.js
+apiService.js
+authSlice.js
+searchSlice.js
+index.js
