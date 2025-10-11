@@ -2,7 +2,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+import * as Constants from 'expo-constants';
 
 // ==================== Storage Utilities ====================
 
@@ -50,7 +50,7 @@ export const network = {
   // 터널 모드 감지
   isTunnelMode() {
     if (Platform.OS === 'web') {
-      const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+      const currentUrl = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
       return currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
     }
     

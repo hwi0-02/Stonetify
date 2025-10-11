@@ -23,6 +23,6 @@ module.exports = {
   Follow,
   RecentView,
   Recommendation,
-  ShareLink
-  ,SongLike
+  ShareLink,
+  SongLike
 };

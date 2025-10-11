@@ -4,6 +4,7 @@ const {
     registerUser,
     loginUser,
     getMe,
+    deleteUserAccount,
     followUser,
     unfollowUser,
     getFollowers,
@@ -29,6 +30,7 @@ router.get('/test', (req, res) => {
 router.post('/register', registerUser);
 router.post('/login', loginUser);
 router.get('/me', protect, getMe);
+router.delete('/me', protect, deleteUserAccount);
 
 // 개발용 비밀번호 재설정
 router.post('/reset-password', resetPasswordForEmail);

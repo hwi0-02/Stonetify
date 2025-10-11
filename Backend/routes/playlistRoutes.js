@@ -5,6 +5,7 @@ const {
     createPlaylist,
     getPlaylistById,
     getPlaylistsByUser,
+    searchPlaylists,
     updatePlaylist,
     deletePlaylist,
     addSongToPlaylist,
@@ -27,6 +28,9 @@ router.get('/me', protect, getMyPlaylists);
 // 좋아요한 플레이리스트
 router.get('/liked', protect, getLikedPlaylists);
 router.get('/songs/liked/me', protect, getMyLikedSongs);
+
+// 플레이리스트 검색 
+router.get('/search', searchPlaylists);
 
 // 플레이리스트 좋아요/취소 토글
 router.post('/:id/like', protect, likePlaylist);

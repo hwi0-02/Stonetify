@@ -133,6 +133,48 @@ const getPlaylistsByUser = asyncHandler(async (req, res) => {
     }
 });
 
+const searchPlaylists = asyncHandler(async (req, res) => {
+    // 1. 프론트엔드에서 보낸 검색어(query)를 받습니다. (예: /api/playlists/search?q=mysearch)
+    const { q } = req.query;
+
+    // 2. 검색어가 없으면 바로 빈 배열을 반환하고 종료합니다.
+    if (!q) {
+        return res.status(200).json([]);
+    }
+
+    try {
+        // 3. DB에서 '공개(public)' 상태이고, '제목(title)'에 검색어가 포함된 플레이리스트를 검색합니다.
+        const playlists = await Playlist.searchPlaylists(q);
+
+        // 4. 검색된 각 플레이리스트에 커버 이미지와 사용자 정보를 추가합니다. (다른 함수들과 동일한 로직)
+        const playlistsWithDetails = await Promise.all(playlists.map(async (playlist) => {
+            const songs = await Song.findByPlaylistId(playlist.id);
+            const user = await User.findById(playlist.user_id);
+            
+            const coverImages = songs
+                .slice(0, 4)
+                .map(song => song.album_cover_url)
+                .filter(url => url);
+                
+            return {
+                ...playlist,
+                cover_images: coverImages,
+                cover_image_url: coverImages.length > 0 ? coverImages[0] : null,
+                // 프론트엔드에서 owner_nickname을 사용하므로 통일성을 위해 추가
+                owner_nickname: user ? user.display_name : '알 수 없음', 
+                user: user ? { id: user.id, display_name: user.display_name } : null,
+            };
+        }));
+        
+        // 5. 최종 결과를 200 OK 상태와 함께 반환합니다. 결과가 없으면 빈 배열 '[]'이 반환됩니다.
+        res.status(200).json(playlistsWithDetails);
+
+    } catch (error) {
+        console.error('❌ Error in searchPlaylists:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // 플레이리스트 수정
 const updatePlaylist = asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -520,6 +562,7 @@ module.exports = {
     createPlaylist,
     getPlaylistById,
     getPlaylistsByUser,
+    searchPlaylists,
     updatePlaylist,
     deletePlaylist,
     addSongToPlaylist,

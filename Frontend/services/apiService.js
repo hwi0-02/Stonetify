@@ -1,11 +1,11 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import * as Constants from 'expo-constants';
 
 // 환경 설정 통합
 const CONFIG = {
-  LOCAL_IP: '172.31.45.120',
+  LOCAL_IP: '172.30.1.32',
   BACKEND_PORT: 5000,
   PROXY_PORT: 3001,
   TIMEOUT: 15000,
@@ -17,7 +17,7 @@ const CONFIG = {
 const getApiUrl = () => {
   if (__DEV__) {
     if (Platform.OS === 'web') {
-      const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+      const currentUrl = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
       
       // HTTPS 터널 모드 감지 및 프록시 서버 사용
       if (currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'))) {
@@ -47,11 +47,12 @@ const getApiUrl = () => {
 
 // 초기화
 const API_URL = getApiUrl();
+console.log("🚀 현재 사용 중인 API 주소:", API_URL);
 
 // 터널 모드 감지 유틸리티 (최적화)
 const isTunnelMode = () => {
   if (Platform.OS === 'web') {
-    const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+    const currentUrl = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
     return currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
   }
   
@@ -102,25 +103,34 @@ api.interceptors.response.use(
 // ==================== API ENDPOINTS ====================
 
 // Authentication APIs
-export const register = (userData) => api.post('users/register', userData).then(res => res.data);
-export const login = (userData) => api.post('users/login', userData).then(res => res.data);
-export const getMe = () => api.get('users/me').then(res => res.data);
+const register = (userData) => api.post('users/register', userData).then(res => res.data);
+const login = (userData) => api.post('users/login', userData).then(res => res.data);
+const getMe = () => api.get('users/me').then(res => res.data);
 
 // User Management APIs
-export const followUser = (following_id) => api.post('users/follow', { following_id }).then(res => res.data);
-export const unfollowUser = (following_id) => api.delete('users/unfollow', { data: { following_id } }).then(res => res.data);
-export const getFollowers = (userId) => api.get(`users/${userId}/followers`).then(res => res.data);
-export const getFollowing = (userId) => api.get(`users/${userId}/following`).then(res => res.data);
+const followUser = (following_id) => api.post('users/follow', { following_id }).then(res => res.data);
+const unfollowUser = (following_id) => api.delete('users/unfollow', { data: { following_id } }).then(res => res.data);
+const getFollowers = (userId) => api.get(`users/${userId}/followers`).then(res => res.data);
+const getFollowing = (userId) => api.get(`users/${userId}/following`).then(res => res.data);
+
+// 프로필 업데이트 API
+const updateProfile = (formData) => api.put('users/profile', formData, {
+  headers: {
+    'Content-Type': 'multipart/form-data', // 파일 업로드를 위해 헤더 변경
+  },
+}).then(res => res.data);
+
+export const deleteUserAccount = () => api.delete('users/me').then(res => res.data);
 
 // Playlist Management APIs
-export const createPlaylist = (playlistData) => api.post('playlists', playlistData).then(res => res.data);
-export const getMyPlaylists = () => api.get('playlists/me').then(res => res.data);
-export const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId}`).then(res => res.data);
-export const getPlaylistById = (playlistId) => api.get(`playlists/${playlistId}`).then(res => res.data);
-export const updatePlaylist = (playlistId, playlistData) => api.put(`playlists/${playlistId}`, playlistData).then(res => res.data);
+const createPlaylist = (playlistData) => api.post('playlists', playlistData).then(res => res.data);
+const getMyPlaylists = () => api.get('playlists/me').then(res => res.data);
+const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId}`).then(res => res.data);
+const getPlaylistById = (playlistId) => api.get(`playlists/${playlistId}`).then(res => res.data);
+const updatePlaylist = (playlistId, playlistData) => api.put(`playlists/${playlistId}`, playlistData).then(res => res.data);
 
 // 플레이리스트 삭제
-export const deletePlaylist = async (playlistId) => {
+const deletePlaylist = async (playlistId) => {
   try {
     console.log('🗑️ 플레이리스트 삭제 API 호출:', playlistId);
     const response = await api.delete(`playlists/${playlistId}`);
@@ -135,7 +145,7 @@ export const deletePlaylist = async (playlistId) => {
 };
 
 // Playlist Song Management APIs
-export const addSongToPlaylist = (playlistId, songData) => {
+const addSongToPlaylist = (playlistId, songData) => {
   // Normalize incoming song object (from Spotify search or internal)
   const normalized = {
     spotify_id: songData.spotify_id || songData.id || null,
@@ -151,7 +161,7 @@ export const addSongToPlaylist = (playlistId, songData) => {
 };
 
 // 플레이리스트에서 곡 삭제
-export const removeSongFromPlaylist = async (playlistId, songId) => {
+const removeSongFromPlaylist = async (playlistId, songId) => {
   try {
     console.log('🗑️ 곡 삭제 API 호출:', { playlistId, songId });
     const response = await api.delete(`playlists/${playlistId}/songs/${songId}`);
@@ -166,36 +176,38 @@ export const removeSongFromPlaylist = async (playlistId, songId) => {
 };
 
 // Playlist Interaction APIs
-export const toggleLikePlaylist = (playlistId) => api.post(`playlists/${playlistId}/like`).then(res => res.data);
-export const getLikedPlaylists = () => api.get('playlists/liked').then(res => res.data);
+const toggleLikePlaylist = (playlistId) => api.post(`playlists/${playlistId}/like`).then(res => res.data);
+const getLikedPlaylists = () => api.get('playlists/liked').then(res => res.data);
 
 // Playlist Sharing APIs
-export const createShareLink = (playlistId) => api.post(`playlists/${playlistId}/share`).then(res => res.data);
-export const getSharedPlaylist = (shareId) => api.get(`playlists/shared/${shareId}`).then(res => res.data);
-export const getShareStats = (playlistId) => api.get(`playlists/${playlistId}/share/stats`).then(res => res.data);
-export const deactivateShareLink = (playlistId) => api.delete(`playlists/${playlistId}/share`).then(res => res.data);
-export const updateShareSettings = (playlistId, settings) => api.put(`playlists/${playlistId}/share/settings`, settings).then(res => res.data);
+const createShareLink = (playlistId) => api.post(`playlists/${playlistId}/share`).then(res => res.data);
+const getSharedPlaylist = (shareId) => api.get(`playlists/shared/${shareId}`).then(res => res.data);
+const getShareStats = (playlistId) => api.get(`playlists/${playlistId}/share/stats`).then(res => res.data);
+const deactivateShareLink = (playlistId) => api.delete(`playlists/${playlistId}/share`).then(res => res.data);
+const updateShareSettings = (playlistId, settings) => api.put(`playlists/${playlistId}/share/settings`, settings).then(res => res.data);
 
 // Post Management APIs
-export const getPosts = () => api.get('posts').then(res => res.data);
-export const createPost = (postData) => api.post('posts', postData).then(res => res.data);
-export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res => res.data);
+const getPosts = () => api.get('posts').then(res => res.data);
+const createPost = (postData) => api.post('posts', postData).then(res => res.data);
+const likePost = (postId) => api.post(`posts/${postId}/like`).then(res => res.data);
 
 // Spotify Integration APIs
-export const searchTracks = (query) => api.get(`spotify/search?q=${encodeURIComponent(query)}`).then(res => res.data);
+const searchTracks = (query) => api.get(`spotify/search?q=${encodeURIComponent(query)}`).then(res => res.data);
+const searchPlaylists = (query) => api.get(`playlists/search?q=${encodeURIComponent(query)}`).then(res => res.data);
 
 // Song Like APIs
-export const toggleLikeSong = (songIdOrSpotifyId, songPayload) =>
+const toggleLikeSong = (songIdOrSpotifyId, songPayload) =>
   api.post(`playlists/songs/${encodeURIComponent(songIdOrSpotifyId)}/like`, songPayload ? { song: songPayload } : undefined).then(res => res.data);
-export const getMyLikedSongs = () => api.get('playlists/songs/liked/me').then(res => res.data);
+const getMyLikedSongs = () => api.get('playlists/songs/liked/me').then(res => res.data);
 
 // Recommendation APIs
-export const getRecommendedPlaylists = () => api.get('recommendations/playlists').then(res => res.data);
-export const getSimilarUsers = () => api.get('recommendations/users').then(res => res.data);
-export const getTrendingPlaylists = () => api.get('recommendations/trending').then(res => res.data);
+const getRecommendedPlaylists = () => api.get('recommendations/playlists').then(res => res.data);
+const getSimilarUsers = () => api.get('recommendations/users').then(res => res.data);
+const getTrendingPlaylists = () => api.get('recommendations/trending').then(res => res.data);
 
 // Utility APIs
-export const testConnection = () => api.get('users/test').then(res => res.data);
+const testConnection = () => api.get('users/test').then(res => res.data);
+
 
 // ==================== DEFAULT EXPORT ====================
 
@@ -204,12 +216,14 @@ const apiService = {
   register,
   login,
   getMe,
+  deleteUserAccount,
   
   // User Management
   followUser,
   unfollowUser,
   getFollowers,
   getFollowing,
+  updateProfile,
   
   // Playlist Management
   createPlaylist,
@@ -241,6 +255,7 @@ const apiService = {
   
   // Spotify
   searchTracks,
+  searchPlaylists,
   toggleLikeSong,
   getMyLikedSongs,
   

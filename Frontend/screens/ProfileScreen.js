@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { getMe, logout } from '../store/slices/authSlice';
@@ -36,16 +36,22 @@ const ProfileScreen = ({ navigation }) => {
 
             <ScrollView contentContainerStyle={styles.scrollViewContent} showsVerticalScrollIndicator={false}>
                 <View style={styles.profileInfo}>
-                    <View style={styles.profileImageContainer}>
-                        <Image 
-                            source={user.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile} 
-                            style={styles.profileImage} 
-                        />
-                        <View style={styles.profileBadge}>
-                            <Ionicons name="person" size={16} color="#1DB954" />
+                     <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
+                        <View style={styles.profileImageContainer}>
+                            <Image 
+                                source={user.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile} 
+                                style={styles.profileImage} 
+                            />
+                            <View style={styles.profileBadge}>
+                                <Ionicons name="person" size={16} color="#1DB954" />
+                            </View>
                         </View>
-                    </View>
-                    <Text style={styles.displayName}>{user.display_name}</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity onPress={() => navigation.navigate('EditProfile')}>
+                        <Text style={styles.displayName}>{user.display_name}</Text>
+                    </TouchableOpacity>
+
                     <View style={styles.statsContainer}>
                         <View style={styles.statItem}>
                             <Text style={styles.statNumber}>{userPlaylists.length}</Text>

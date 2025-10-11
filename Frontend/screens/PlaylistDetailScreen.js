@@ -7,7 +7,7 @@ import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SongListItem from '../components/SongListItem';
-import * as ApiService from '../services/apiService';
+import apiService from '../services/apiService';
 
 const placeholderAlbum = require('../assets/images/placeholder_album.png');
 
@@ -71,7 +71,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   setIsLiked(liked);
       (async () => {
         try {
-          const likes = await ApiService.getMyLikedSongs();
+          const likes = await apiService.getMyLikedSongs();
           const likedMap = {};
           for (const l of likes || []) {
             likedMap[l.song_id] = true;
@@ -191,7 +191,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       console.log('💥 곡 제거 확인됨 - 실제 제거 시작');
       try {
         console.log('🗑️ 곡 제거 시작:', { playlistId: currentPlaylist.id, songId: song.id });
-        await ApiService.removeSongFromPlaylist(currentPlaylist.id, song.id);
+        await apiService.removeSongFromPlaylist(currentPlaylist.id, song.id);
         dispatch(fetchPlaylistDetails(currentPlaylist.id));
         if (Platform.OS === 'web') {
           alert('곡이 플레이리스트에서 제거되었습니다.');
@@ -236,7 +236,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     const prev = !!songLikes[key];
     setSongLikes((s) => ({ ...s, [key]: !prev }));
     try {
-      await ApiService.toggleLikeSong(key);
+      await apiService.toggleLikeSong(key);
     } catch (e) {
       setSongLikes((s) => ({ ...s, [key]: prev }));
       const msg = e?.message || '곡 좋아요 처리 중 오류가 발생했습니다.';

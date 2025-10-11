@@ -7,6 +7,7 @@ import AuthInput from '../components/auth/AuthInput';
 import AuthButton from '../components/auth/AuthButton';
 import { LinearGradient } from 'expo-linear-gradient';
 import apiService from '../services/apiService';
+import * as Constants from 'expo-constants';
 import utils from '../utils'; // 공통 유틸리티 import
 
 const LoginScreen = ({ navigation }) => {
@@ -21,7 +22,7 @@ const LoginScreen = ({ navigation }) => {
     // 터널 모드 감지 함수
     const isTunnelMode = () => {
       if (Platform.OS === 'web') {
-        const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+        const currentUrl = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
         // HTTPS 터널 모드 감지
         return currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
       }
@@ -66,7 +67,7 @@ const LoginScreen = ({ navigation }) => {
     }
     
     // 터널 모드에서는 연결 상태 확인을 건너뛰고 바로 로그인 시도
-    const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
+    const currentUrl = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
     const isTunnelMode = currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
     
     if (!isTunnelMode && connectionStatus === '서버 연결 실패') {

@@ -101,6 +101,45 @@ class User {
   static async getAllUsers() {
     return await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.USERS);
   }
+
+  static async deleteAccount(userId) {
+    console.log(`[DB Model] User.deleteAccount 호출됨: ${userId}`);
+    try {
+      // 이 사용자가 생성한 모든 플레이리스트 ID를 찾습니다.
+      const userPlaylists = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.PLAYLISTS, 'user_id', userId);
+      const playlistIds = userPlaylists.map(p => p.id);
+
+      const deletionPromises = [];
+
+      // 1. 사용자가 만든 모든 플레이리스트와 관련 데이터를 삭제합니다.
+      for (const playlistId of playlistIds) {
+        // Playlist.delete는 관련 노래, 좋아요 등을 모두 삭제합니다 (기존 모델 재사용)
+        deletionPromises.push(require('./playlist').delete(playlistId));
+      }
+
+      // 2. 사용자가 누른 모든 플레이리스트 좋아요를 삭제합니다.
+      const userLikes = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.LIKED_PLAYLISTS, 'user_id', userId);
+      userLikes.forEach(like => {
+        deletionPromises.push(RealtimeDBHelpers.deleteDocument(COLLECTIONS.LIKED_PLAYLISTS, like.id));
+      });
+      
+      // 3. (추가) 사용자가 누른 모든 노래 좋아요를 삭제합니다.
+      const songLikes = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.SONG_LIKES, 'user_id', userId);
+      songLikes.forEach(like => {
+          deletionPromises.push(RealtimeDBHelpers.deleteDocument(COLLECTIONS.SONG_LIKES, like.id));
+      });
+
+      // 4. 마지막으로 사용자 본인 정보를 삭제합니다.
+      deletionPromises.push(this.delete(userId));
+
+      await Promise.all(deletionPromises);
+      console.log(`[DB Model] 사용자 ${userId} 및 모든 관련 데이터 삭제 완료`);
+      return true;
+    } catch (error) {
+      console.error(`[DB Model] 사용자 ${userId} 계정 삭제 중 오류 발생:`, error);
+      throw new Error('계정 관련 데이터를 삭제하는 중 오류가 발생했습니다.');
+    }
+  }
 }
 
 module.exports = User;
