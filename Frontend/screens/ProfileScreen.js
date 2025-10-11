@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import { getMe, logout } from '../store/slices/authSlice';
@@ -7,6 +7,7 @@ import { fetchMyPlaylists } from '../store/slices/playlistSlice';
 import { fetchLikedSongs } from '../store/slices/likedSongsSlice'; // 변경
 import { fetchRecentSongs } from '../store/slices/recentSongsSlice'; // 추가
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
+import { toggleLikedLocal, toggleLikeSongThunk } from '../store/slices/likedSongsSlice'; // 추가
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
@@ -14,8 +15,9 @@ const ProfileScreen = ({ navigation }) => {
     const dispatch = useDispatch();
     const { user } = useSelector((state) => state.auth);
     const { userPlaylists, status } = useSelector((state) => state.playlist);
-    const { likedSongs } = useSelector((state) => state.likedSongs.list); // 변경
+    const likedSongs = useSelector((state) => state.likedSongs.list);
     const { recentSongs } = useSelector((state) => state.recentSongs); // 추가
+    const likedPlaylists = useSelector(state => state.likedPlaylists.list); // 추가
 
     useEffect(() => {
         // 사용자 정보 및 플레이리스트 로드
@@ -83,14 +85,14 @@ const ProfileScreen = ({ navigation }) => {
                     onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
                 />
                 <HorizontalPlaylist
-                    title="좋아요한 곡 리스트"
-                    data={likedSongs}
-                    onItemPress={(item) => navigation.navigate('TrackDetail', { trackId: item.id })}
+                    title="좋아요한 플레이리스트" // 수정
+                    data={likedPlaylists}
+                    onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
                 />
                 <HorizontalPlaylist
-                    title="최근에 본 곡 리스트"
-                    data={recentSongs} // 추가
-                    onItemPress={(item) => navigation.navigate('TrackDetail', { trackId: item.id })}
+                    title="최근에 본 플레이리스트"
+                    data={recentSongs}
+                    onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
                 />
                 
             </ScrollView>

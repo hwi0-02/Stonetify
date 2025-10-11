@@ -42,8 +42,10 @@ export const toggleLikeSongThunk = createAsyncThunk(
   async (song, thunkAPI) => {
     try {
       const key = song.id || song.spotify_id;
-      await apiService.toggleLikeSong(key, song);
-      return song;
+      // 서버에서 곡 하나만 반환하도록 수정
+      const updatedSong = await apiService.toggleLikeSong(key, song);
+      // updatedSong은 방금 토글한 곡 하나여야 함
+      return updatedSong;
     } catch (e) {
       return thunkAPI.rejectWithValue('곡 좋아요 처리에 실패했습니다.');
     }
@@ -52,18 +54,25 @@ export const toggleLikeSongThunk = createAsyncThunk(
 
 const likedSongsSlice = createSlice({
   name: 'likedSongs',
-  initialState,
+  initialState: {
+    map: {},
+    list: [],
+    status: 'idle',
+    error: null,
+  },
   reducers: {
-    addLikedSong: (state, action) => {
-      // 이미 있으면 추가하지 않음
-      if (!state.list.find(song => song.id === action.payload.id)) {
-        state.list.push(action.payload);
-        saveLikedSongs(state.list); // localStorage에 저장
+    toggleLikedLocal: (state, action) => {
+      const song = action.payload;
+      const key = song.spotify_id || song.id;
+      const newMap = { ...state.map };
+      if (newMap[key]) {
+        delete newMap[key];
+        state.list = state.list.filter(s => (s.id || s.spotify_id) !== key);
+      } else {
+        newMap[key] = true;
+        state.list = [{ ...song, liked_at: Date.now() }, ...state.list];
       }
-    },
-    removeLikedSong: (state, action) => {
-      state.list = state.list.filter(song => song.id !== action.payload);
-      saveLikedSongs(state.list); // localStorage에 저장
+      state.map = newMap;
     },
   },
   extraReducers: (builder) => {
@@ -89,18 +98,25 @@ const likedSongsSlice = createSlice({
         const song = action.payload || {};
         const key = song.spotify_id || song.id;
         if (!key) return;
-        const curr = !!state.map[key];
-        state.map[key] = !curr;
-        if (!curr) {
-          state.list = [{ ...song, liked_at: Date.now() }, ...state.list];
+        const newMap = { ...state.map };
+        if (song.liked) {
+          newMap[key] = true;
+          // 중복 추가 방지: 이미 있으면 추가하지 않음
+          if (!state.list.some(s => (s.spotify_id || s.id) === key)) {
+            state.list = [{ ...song, liked_at: Date.now() }, ...state.list];
+          }
         } else {
-          state.list = state.list.filter(s => (s.id || s.spotify_id) !== key);
+          delete newMap[key];
+          // 정확히 key로 삭제
+          state.list = state.list.filter(s => (s.spotify_id || s.id) !== key);
         }
+        state.map = newMap;
+        saveLikedSongs([...state.list]);
       });
   }
 });
 
-export const { addLikedSong, removeLikedSong } = likedSongsSlice.actions;
+export const { toggleLikedLocal } = likedSongsSlice.actions;
 export default likedSongsSlice.reducer;
 
 // 좋아요 여부를 쉽게 확인하는 selector

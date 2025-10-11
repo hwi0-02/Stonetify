@@ -8,6 +8,7 @@ import notificationReducer from './slices/notificationSlice';
 import searchReducer from './slices/searchSlice';
 import likedSongsReducer from './slices/likedSongsSlice';
 import recentSongsReducer from './slices/recentSongsSlice'; // 추가
+import likedPlaylistsReducer from './slices/likedPlaylistsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -20,6 +21,7 @@ export const store = configureStore({
     search: searchReducer,
     likedSongs: likedSongsReducer,
     recentSongs: recentSongsReducer, // 추가
+    likedPlaylists: likedPlaylistsReducer,
   },
   // 미들웨어 설정 추가 (redux-thunk의 에러 방지)
   middleware: (getDefaultMiddleware) => getDefaultMiddleware({

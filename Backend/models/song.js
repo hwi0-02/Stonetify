@@ -17,31 +17,33 @@ class Song {
     };
     
     const songId = await RealtimeDBHelpers.createDocument(COLLECTIONS.SONGS, song);
-    return songId;
+    return { id: songId, ...song };
   }
 
   static async findById(id) {
-    return await RealtimeDBHelpers.getDocumentById(COLLECTIONS.SONGS, id);
+    const song = await RealtimeDBHelpers.getDocumentById(COLLECTIONS.SONGS, id);
+    if (!song) return null;
+    // id가 누락되어 있으면 추가
+    return { id, ...song };
   }
 
   static async findBySpotifyId(spotifyId) {
     const songs = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.SONGS, 'spotify_id', spotifyId);
-    return songs.length > 0 ? songs[0] : null;
+    if (songs.length > 0) {
+        const song = songs[0];
+        return { id: song.id, ...song };
+    }
+    return null;
   }
 
   static async findOrCreate(songData) {
     const { spotify_id } = songData;
-    
-    // 먼저 기존 곡이 있는지 확인
     let existingSong = await this.findBySpotifyId(spotify_id);
-    
     if (existingSong) {
-      return existingSong;
+        return existingSong;
     }
-    
-    // 없으면 새로 생성
-    const newSongId = await this.create(songData);
-    return await this.findById(newSongId);
+    const newSong = await this.create(songData);
+    return await this.findById(newSong.id);
   }
 
   static async update(id, songData) {

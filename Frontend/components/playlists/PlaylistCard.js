@@ -41,7 +41,6 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
   const { user } = useSelector((state) => state.auth);
   const { likedPlaylists } = useSelector((state) => state.playlist);
   const [shareModalVisible, setShareModalVisible] = useState(false);
-  const coverImages = playlist.cover_images || [];
   
   const isLiked = likedPlaylists.some(p => p.id === playlist.id);
 
@@ -79,6 +78,21 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
     );
   };
 
+  // 최근에 본 플레이리스트 등에서 creator, cover_images, user 정보가 다를 수 있으니 보정
+  const displayName =
+    playlist.user?.display_name ||
+    playlist.creator ||
+    playlist.user_name ||
+    'Unknown User';
+
+  // cover_images가 없으면 songs 배열에서 4개 곡의 앨범 커버를 추출
+  let coverImages = playlist.cover_images || [];
+  if ((!coverImages || coverImages.length === 0) && playlist.songs && playlist.songs.length > 0) {
+    coverImages = playlist.songs.slice(0, 4).map(song =>
+      song.album_cover_url || song.cover_image_url || song.image || null
+    );
+  }
+
   return (
     <TouchableOpacity style={styles.cardContainer} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.imageContainer}>
@@ -108,9 +122,8 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
         {playlist.description ? (
           <Text style={styles.description} numberOfLines={2}>{playlist.description}</Text>
         ) : null}
-        {playlist.user?.display_name && (
-          <Text style={styles.creator}>By {playlist.user.display_name}</Text>
-        )}
+        {/* 만든 사람 정보 항상 표시 */}
+        <Text style={styles.creator}>By {displayName}</Text>
       </View>
       
       <ShareModal 

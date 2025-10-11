@@ -93,6 +93,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  creator: {
+    color: '#b3b3b3',
+    fontSize: 14,
+    fontWeight: '400',
+    marginTop: 4,
+  },
 });
 
 export default HorizontalPlaylist;

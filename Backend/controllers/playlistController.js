@@ -363,7 +363,7 @@ const getLikedPlaylists = asyncHandler(async (req, res) => {
             return {
                 ...playlist,
                 cover_images: coverImages,
-                cover_image_url: coverImages.length > 0 ? coverImages[0] : null,
+                cover_image_url: CoverImages.length > 0 ? coverImages[0] : null,
                 user: user ? { id: user.id, display_name: user.display_name } : null,
                 liked_at: like.created_at
             };
@@ -531,10 +531,10 @@ module.exports = {
     getShareStats,
     deactivateShareLink,
     // song likes
+    // 곡 좋아요/취소 토글
     toggleLikeSong: asyncHandler(async (req, res) => {
         const { songId } = req.params;
         const payloadSong = req.body?.song;
-        // songId may be internal or spotify_id -> resolve to internal id
         const key = songId || payloadSong?.spotify_id || payloadSong?.id;
         let song = key ? await Song.findById(key) : null;
         if (!song && key) song = await Song.findBySpotifyId(key);
@@ -555,9 +555,20 @@ module.exports = {
             res.status(404);
             throw new Error('곡을 찾을 수 없습니다.');
         }
+
+        // ★ 여기서 콘솔로 song 객체를 찍어주세요!
+        console.log('toggleLikeSong song:', song);
+
         const result = await SongLike.toggle(req.user.id, song.id);
-        res.status(200).json(result);
+
+        res.status(200).json({
+            ...song,
+            liked: result.liked,
+            liked_at: result.liked_at || Date.now()
+        });
     }),
+
+    // 좋아요한 곡 목록 조회
     getMyLikedSongs: asyncHandler(async (req, res) => {
         const likes = await SongLike.findByUserId(req.user.id);
         const songs = [];

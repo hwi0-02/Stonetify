@@ -2,6 +2,7 @@
 node_modules/
 
 # Expo files
+.env
 .expo/
 dist/
 npm-debug.log*

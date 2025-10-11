@@ -56,7 +56,9 @@ class RealtimeDBHelpers {
   // ID로 문서 조회
   static async getDocumentById(collection, id) {
     const snapshot = await db.ref(`${collection}/${id}`).once('value');
-    return snapshot.exists() ? snapshot.val() : null;
+    const data = snapshot.exists() ? snapshot.val() : null;
+    if (!data) return null;
+    return { id, ...data }; // 반드시 id 포함!
   }
 
   // 문서 업데이트

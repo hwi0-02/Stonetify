@@ -185,8 +185,14 @@ export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res =>
 export const searchTracks = (query) => api.get(`spotify/search?q=${encodeURIComponent(query)}`).then(res => res.data);
 
 // Song Like APIs
-export const toggleLikeSong = (songIdOrSpotifyId, songPayload) =>
-  api.post(`playlists/songs/${encodeURIComponent(songIdOrSpotifyId)}/like`, songPayload ? { song: songPayload } : undefined).then(res => res.data);
+export const toggleLikeSong = async (songIdOrSpotifyId, songPayload) => {
+  const response = await api.post(
+    `playlists/songs/${encodeURIComponent(songIdOrSpotifyId)}/like`,
+    songPayload ? { song: songPayload } : undefined
+  );
+  console.log('toggleLikeSong 응답:', response.data); // ★ 여기 추가!
+  return response.data;
+};
 export const getMyLikedSongs = () => api.get('playlists/songs/liked/me').then(res => res.data);
 
 // Recommendation APIs

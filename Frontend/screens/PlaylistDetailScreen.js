@@ -8,6 +8,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SongListItem from '../components/SongListItem';
 import * as ApiService from '../services/apiService';
+import DraggableFlatList from 'react-native-draggable-flatlist';
+import { addRecentPlaylist } from '../store/slices/recentSongsSlice';
 
 const placeholderAlbum = require('../assets/images/placeholder_album.png');
 
@@ -49,12 +51,18 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const { currentPlaylist, status, likedPlaylists } = useSelector((state) => state.playlist);
   const { user } = useSelector((state) => state.auth);
   
+  const isLiked = useSelector(state =>
+    state.likedPlaylists.list.some(p => p.id === currentPlaylist?.id)
+  );
+
   const [menuVisible, setMenuVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [isLiked, setIsLiked] = useState(false);
   const [songLikes, setSongLikes] = useState({});
+  const [songs, setSongs] = useState(
+    (currentPlaylist && Array.isArray(currentPlaylist.songs)) ? currentPlaylist.songs : []
+  );
 
   useEffect(() => {
     if (playlistId) {
@@ -67,8 +75,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     if (currentPlaylist) {
       setEditTitle(currentPlaylist.title || '');
       setEditDescription(currentPlaylist.description || '');
-  const liked = !!(likedPlaylists || []).find(p => p.id === currentPlaylist.id) || currentPlaylist.liked || false;
-  setIsLiked(liked);
       (async () => {
         try {
           const likes = await ApiService.getMyLikedSongs();
@@ -89,6 +95,23 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
   }, [currentPlaylist, likedPlaylists]);
   
+  useEffect(() => {
+    setSongs((currentPlaylist && Array.isArray(currentPlaylist.songs)) ? currentPlaylist.songs : []);
+  }, [currentPlaylist?.songs]);
+
+  useEffect(() => {
+    if (currentPlaylist) {
+      dispatch(addRecentPlaylist({
+        id: currentPlaylist.id,
+        title: currentPlaylist.title,
+        // 썸네일용 곡 4개 정보 (PlaylistCard에서 썸네일로 사용)
+        songs: (currentPlaylist.songs || []).slice(0, 4),
+        // 만든 사람 정보
+        creator: currentPlaylist.user?.display_name || currentPlaylist.creator || 'Unknown User',
+      }));
+    }
+  }, [currentPlaylist, dispatch]);
+
   const handleEditPlaylist = () => {
     setMenuVisible(false);
     setEditModalVisible(true);
@@ -222,13 +245,14 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     );
   };
   
-  const handleToggleLike = async () => {
-    try {
-      const result = await dispatch(toggleLikePlaylist(currentPlaylist.id)).unwrap();
-      setIsLiked(result.liked);
-    } catch (error) {
-      Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
-    }
+  const handleToggleLike = () => {
+    dispatch(toggleLikePlaylist({
+      id: currentPlaylist.id,
+      title: currentPlaylist.title,
+      songs: (currentPlaylist.songs || []).slice(0, 4),
+      creator: currentPlaylist.user?.display_name || currentPlaylist.creator || 'Unknown User',
+      // cover_images 등 필요한 정보 추가
+    }));
   };
 
   const handleToggleSongLike = async (song) => {
@@ -257,6 +281,12 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleDragEnd = async ({ data }) => {
+    setSongs(data);
+    // 서버에 순서 저장 API 호출이 필요하다면 여기에 추가
+    // await ApiService.updatePlaylistOrder(currentPlaylist.id, data.map(song => song.id));
+  };
+
   // 소유자 확인 (디버깅 추가)
   const isOwner = currentPlaylist && user && currentPlaylist.user_id === user.id;
   console.log('🔍 isOwner 디버깅:', {
@@ -267,7 +297,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     isOwner
   });
 
-  if (status === 'loading' || !currentPlaylist) {
+  if (status === 'loading' || !currentPlaylist || !Array.isArray(songs)) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#8A2BE2" />
@@ -287,7 +317,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       </Text>
       
       <View style={styles.actionButtons}>
-        {/* 디버깅을 위해 임시로 항상 표시 */}
+        {/* ...기존 메뉴, 좋아요, 공유 버튼... */}
         <TouchableOpacity style={styles.menuButton} onPress={() => {
           console.log('🎯 메뉴 버튼 클릭됨');
           setMenuVisible(true);
@@ -302,7 +332,17 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
           <Ionicons name="share-outline" size={24} color="white" />
         </TouchableOpacity>
-        
+
+        {/* 곡 추가 버튼 */}
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => {
+            navigation.navigate('Search', { addToPlaylistId: currentPlaylist.id });
+          }}
+        >
+          <Ionicons name="add-circle-outline" size={48} color="#1DB954" />
+        </TouchableOpacity>
+
         {currentPlaylist.songs && currentPlaylist.songs.length > 0 && (
           <TouchableOpacity 
             style={styles.playButton} 
@@ -335,23 +375,29 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
       
-      <FlatList
-        data={currentPlaylist.songs || []}
+      <DraggableFlatList
+        data={Array.isArray(songs) ? songs : []}
         keyExtractor={(item, index) => `${playlistId}:${item?.id ?? item?.spotify_id ?? index}`}
-        renderItem={({ item, index }) => {
-          if (!item) return null;
-          return (
-            <SongListItem 
-              item={item}
-              onPress={() => handlePlayTrack(item)}
-              showRemoveButton={isOwner}
-              onRemovePress={handleRemoveSong}
-              showLikeButton
-              onLikePress={handleToggleSongLike}
-              liked={!!songLikes[item?.id || item?.spotify_id]}
-            />
-          );
-        }}
+        renderItem={({ item, index, drag, isActive }) => (
+          <SongListItem
+            item={item}
+            onPress={() => handlePlayTrack(item)}
+            showRemoveButton={isOwner}
+            onRemovePress={handleRemoveSong}
+            showLikeButton
+            onLikePress={() => handleToggleSongLike(item)}
+            liked={!!songLikes[item?.id || item?.spotify_id]}
+            showMenuButton={true}
+            onMenuPress={() => {
+              // 메뉴 버튼 클릭 시 메뉴 띄우기
+              Alert.alert('메뉴', `"${item.name || item.title}" 메뉴 버튼 클릭됨`);
+            }}
+            // 햄버거 버튼을 누르고 있을 때 drag() 호출
+            onMenuLongPress={drag}
+            isActive={isActive}
+          />
+        )}
+        onDragEnd={handleDragEnd}
         ListHeaderComponent={renderHeader}
         showsVerticalScrollIndicator={true}
         ListEmptyComponent={() => (
@@ -672,6 +718,11 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     marginRight: 16,
+  },
+  addButton: {
+    marginRight: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 
