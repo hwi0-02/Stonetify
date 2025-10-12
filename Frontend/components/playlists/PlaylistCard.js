@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import placeholderAlbum from '../../assets/images/placeholder_album.png';
-import { useDispatch, useSelector } from 'react-redux';
 import { toggleLikePlaylist, deletePlaylist } from '../../store/slices/playlistSlice';
+import { useDispatch, useSelector } from 'react-redux';
 import ShareModal from './ShareModal';
 
 // 플레이리스트 썸네일 (2x2 이미지 격자)
@@ -40,9 +40,45 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const { likedPlaylists } = useSelector((state) => state.playlist);
+
+  const [recommended, setRecommended] = useState([]);
+  const [recommendCount, setRecommendCount] = useState(playlist.recommendCount || 0);
   const [shareModalVisible, setShareModalVisible] = useState(false);
   
   const isLiked = likedPlaylists.some(p => p.id === playlist.id);
+
+  // 최초 마운트 시에만 localStorage에서 값 불러오기
+  const initialized = useRef(false);
+  useEffect(() => {
+    if (initialized.current) return;
+    // 추천한 목록
+    const data = localStorage.getItem('recommendedPlaylists');
+    if (data) {
+      try {
+        setRecommended(JSON.parse(data));
+      } catch {
+        setRecommended([]);
+      }
+    }
+    // 추천수
+    const storedCounts = localStorage.getItem('recommendCounts');
+    if (storedCounts) {
+      try {
+        const parsed = JSON.parse(storedCounts);
+        if (parsed && typeof parsed[playlist.id] === 'number') {
+          setRecommendCount(parsed[playlist.id]);
+        } else {
+          setRecommendCount(playlist.recommendCount || 0);
+        }
+      } catch {
+        setRecommendCount(playlist.recommendCount || 0);
+      }
+    } else {
+      setRecommendCount(playlist.recommendCount || 0);
+    }
+    initialized.current = true;
+    // eslint-disable-next-line
+  }, [playlist.id]);
 
   const handleLike = async () => {
     try {
@@ -76,6 +112,36 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
       ],
       { cancelable: true }
     );
+  };
+
+  const handleRecommend = () => {
+    let newCount;
+    let newRecommended;
+
+    if (recommended.includes(playlist.id)) {
+      // 이미 추천한 경우: 추천 취소
+      newCount = Math.max(recommendCount - 1, 0);
+      newRecommended = recommended.filter(id => id !== playlist.id);
+    } else {
+      // 추천하지 않은 경우: 추천 추가
+      newCount = recommendCount + 1;
+      newRecommended = [...recommended, playlist.id];
+    }
+
+    setRecommendCount(newCount);
+    setRecommended(newRecommended);
+    localStorage.setItem('recommendedPlaylists', JSON.stringify(newRecommended));
+
+    // 추천수도 localStorage에 저장
+    let recommendCounts = {};
+    const storedCounts = localStorage.getItem('recommendCounts');
+    if (storedCounts) {
+      try {
+        recommendCounts = JSON.parse(storedCounts);
+      } catch {}
+    }
+    recommendCounts[playlist.id] = newCount;
+    localStorage.setItem('recommendCounts', JSON.stringify(recommendCounts));
   };
 
   // 최근에 본 플레이리스트 등에서 creator, cover_images, user 정보가 다를 수 있으니 보정
@@ -118,14 +184,25 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
         )}
       </View>
       <View style={styles.infoContainer}>
-        <Text style={styles.title} numberOfLines={2}>{playlist.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={2}>{playlist.title}</Text>
+          <TouchableOpacity
+            style={styles.recommendBtn}
+            onPress={handleRecommend}
+          >
+            <Ionicons
+              name="thumbs-up-outline"
+              size={16}
+              color={recommended.includes(playlist.id) ? "#1DB954" : "#888"}
+            />
+            <Text style={styles.recommendCount}>{recommendCount}</Text>
+          </TouchableOpacity>
+        </View>
         {playlist.description ? (
           <Text style={styles.description} numberOfLines={2}>{playlist.description}</Text>
         ) : null}
-        {/* 만든 사람 정보 항상 표시 */}
         <Text style={styles.creator}>By {displayName}</Text>
       </View>
-      
       <ShareModal 
         visible={shareModalVisible}
         onClose={() => setShareModalVisible(false)}
@@ -197,13 +274,38 @@ const styles = StyleSheet.create({
   infoContainer: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between', // 제목 왼쪽, 추천버튼 오른쪽
+    marginBottom: 2,
+  },
   title: {
     fontSize: 15,
     fontWeight: '700',
     color: '#ffffff',
-    marginBottom: 6,
     lineHeight: 20,
     letterSpacing: -0.2,
+    flexShrink: 1,
+    maxWidth: 90, // 제목이 너무 길면 추천버튼과 겹치지 않게
+  },
+  recommendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222',
+    borderRadius: 14,
+    paddingHorizontal: 12, // 좌우 적당히
+    paddingVertical: 9,    // 상하 적당히 (1.5배 느낌)
+    marginLeft: 8,
+    minWidth: 44,
+    minHeight: 33,         // 버튼 높이(처음의 1.5배 정도)
+    justifyContent: 'center',
+  },
+  recommendCount: {
+    color: '#1DB954',
+    fontWeight: 'bold',
+    marginLeft: 6,
+    fontSize: 16,
   },
   description: {
     fontSize: 12,
