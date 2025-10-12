@@ -8,6 +8,7 @@ import { fetchLikedSongs } from '../store/slices/likedSongsSlice'; // 변경
 import { fetchRecentSongs } from '../store/slices/recentSongsSlice'; // 추가
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
 import { toggleLikedLocal, toggleLikeSongThunk } from '../store/slices/likedSongsSlice'; // 추가
+import { fetchLikedPlaylists } from '../store/slices/playlistSlice'; // 추가
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
@@ -17,7 +18,7 @@ const ProfileScreen = ({ navigation }) => {
     const { userPlaylists, status } = useSelector((state) => state.playlist);
     const likedSongs = useSelector((state) => state.likedSongs.list);
     const { recentSongs } = useSelector((state) => state.recentSongs); // 추가
-    const likedPlaylists = useSelector(state => state.likedPlaylists.list); // 추가
+    const likedPlaylists = useSelector(state => state.playlist.likedPlaylists); // 변경
 
     useEffect(() => {
         // 사용자 정보 및 플레이리스트 로드
@@ -27,6 +28,7 @@ const ProfileScreen = ({ navigation }) => {
         dispatch(fetchMyPlaylists());
         dispatch(fetchLikedSongs()); // 변경
         dispatch(fetchRecentSongs()); // 추가
+        dispatch(fetchLikedPlaylists()); // 추가
     }, [dispatch]);
 
     if (!user) {

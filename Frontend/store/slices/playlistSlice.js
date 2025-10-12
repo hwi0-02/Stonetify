@@ -134,7 +134,6 @@ export const toggleLikePlaylist = createAsyncThunk(
   }
 );
 
-
 const playlistSlice = createSlice({
   name: 'playlist',
   initialState,
@@ -159,8 +158,6 @@ const playlistSlice = createSlice({
       })
       .addCase(fetchPlaylistsByUserId.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        // 이 경우, userPlaylists를 덮어쓸지, 다른 state를 사용할지 결정해야 함.
-        // 현재는 프로필 화면에서만 사용하므로, 덮어써도 무방할 수 있음.
         state.userPlaylists = action.payload;
       })
       .addCase(fetchPlaylistsByUserId.rejected, (state, action) => {
