@@ -4,7 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { getMe, logout } from '../store/slices/authSlice';
-import { fetchMyPlaylists } from '../store/slices/playlistSlice';
+import { fetchMyPlaylists, fetchLikedPlaylists } from '../store/slices/playlistSlice';
+import { fetchRecentPlaylists } from '../store/slices/recentPlaylistsSlice';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { useSpotifyAuth } from '../hooks/useSpotifyAuth';
@@ -18,7 +19,9 @@ const placeholderProfile = require('../assets/images/placeholder_album.png');
 const ProfileScreen = ({ navigation, route }) => {
     const dispatch = useDispatch();
     const { user } = useSelector((state) => state.auth);
-    const { userPlaylists, status } = useSelector((state) => state.playlist);
+    const { userPlaylists } = useSelector((state) => state.playlist);
+    const likedPlaylists = useSelector((state) => state.playlist.likedPlaylists);
+    const recentPlaylists = useSelector((state) => state.recentPlaylists.items);
     const spotify = useSelector((state) => state.spotify);
     const userId = user?.id || user?.userId;
     // Spotify 인증 훅 사용 (입력: userId, 효과: 인증 플로우 관리)
@@ -30,6 +33,8 @@ const ProfileScreen = ({ navigation, route }) => {
             dispatch(getMe());
         }
         dispatch(fetchMyPlaylists());
+        dispatch(fetchLikedPlaylists());
+        dispatch(fetchRecentPlaylists());
     }, [dispatch]);
 
     if (!user) {
@@ -348,6 +353,16 @@ const ProfileScreen = ({ navigation, route }) => {
                 <HorizontalPlaylist
                     title="나의 플레이리스트"
                     data={userPlaylists}
+                    onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
+                />
+                <HorizontalPlaylist
+                    title="좋아요한 플레이리스트"
+                    data={likedPlaylists}
+                    onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
+                />
+                <HorizontalPlaylist
+                    title="최근에 본 플레이리스트"
+                    data={recentPlaylists}
                     onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
                 />
 

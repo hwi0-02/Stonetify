@@ -32,6 +32,7 @@ const SearchScreen = () => {
 
   const { userPlaylists, status: playlistStatus } = useSelector((state) => state.playlist);
   const { history } = useSelector((state) => state.search);
+  const spotifyState = useSelector((state) => state.spotify);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -44,6 +45,12 @@ const SearchScreen = () => {
   const [selectedSong, setSelectedSong] = useState(null);
   const [newlyCreatedPlaylistId, setNewlyCreatedPlaylistId] = useState(null); // ❗ 새로 추가
   const [likeInflight, setLikeInflight] = useState({});
+
+  const canPlayFullTracks = useMemo(() => {
+    const hasToken = !!spotifyState?.accessToken;
+    const isPremium = !!spotifyState?.isPremium;
+    return hasToken && isPremium;
+  }, [spotifyState?.accessToken, spotifyState?.isPremium]);
 
   const trackResults = useMemo(() => {
     const trackSection = results.find((section) => section.title === '음원');
@@ -150,16 +157,43 @@ const SearchScreen = () => {
   };
 
   const handlePlayTrack = (track) => {
-    const list = showLiked ? likedSongsList : trackResults;
-    if (!list || !list.length) return;
+    if (!canPlayFullTracks) {
+      Alert.alert(
+        'Spotify 연결 필요',
+        '프로필 화면에서 Spotify 계정을 연결하면 전체 트랙을 재생할 수 있습니다.'
+      );
+      return;
+    }
+    const rawList = showLiked ? likedSongsList : trackResults;
+    if (!rawList || !rawList.length) return;
+
+    const queue = rawList
+      .map((candidate) => ({
+        id: candidate.spotify_id || candidate.id,
+        spotify_id: candidate.spotify_id || candidate.id,
+        name: candidate.name || candidate.title,
+        title: candidate.title || candidate.name,
+        artists: candidate.artists,
+        album: candidate.album,
+        album_cover_url: candidate.album_cover_url,
+        uri: candidate.uri,
+        preview_url: candidate.preview_url,
+      }))
+      .filter((candidate) => !!(candidate.spotify_id || candidate.id));
+
+    if (!queue.length) {
+      Alert.alert('재생 오류', '재생 가능한 트랙이 없습니다.');
+      return;
+    }
+
     const startIndex = list.findIndex(t => (t.id || t.spotify_id) === (track.id || track.spotify_id));
     if (startIndex === -1) return;
     if (!showLiked) {
       dispatch(addRecentSearch({ type: 'track', data: track }));
     }
-    dispatch(loadQueue({ tracks: list, startIndex }))
+    dispatch(loadQueue({ tracks: queue, startIndex }))
       .unwrap()
-      .then(() => navigation.navigate('Player'))
+    .then(() => navigation.navigate('Player'))
       .catch(() => Alert.alert('재생 오류', '재생 가능한 트랙이 없습니다.'));
   };
 
@@ -226,10 +260,12 @@ const SearchScreen = () => {
     return (
       <SongListItem
         item={item}
-        onPress={handlePlayTrack}
+        onPress={canPlayFullTracks ? handlePlayTrack : undefined}
         onAddPress={openPlaylistModal}
         showLikeButton
         liked={isLiked}
+        showPlayButton={canPlayFullTracks}
+        onPlayPress={handlePlayTrack}
         onLikePress={async (song) => {
           const sKey = song.spotify_id || song.id || null;
           if (!sKey) {

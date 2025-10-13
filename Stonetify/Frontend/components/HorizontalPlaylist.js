@@ -5,12 +5,27 @@ import PlaylistCard from './playlists/PlaylistCard';
 
 const HorizontalPlaylist = ({ title, data, onPlaylistPress, onItemPress, onSeeAll, coverOnly = false }) => {
   const handlePress = onItemPress || onPlaylistPress;
-  
+
+  const normalizedData = Array.isArray(data) ? data.filter(Boolean) : [];
+  const uniqueData = [];
+  const seen = new Set();
+
+  normalizedData.forEach((item, index) => {
+    const id = item?.id;
+    if (id !== undefined && id !== null) {
+      if (seen.has(id)) {
+        return;
+      }
+      seen.add(id);
+    }
+    uniqueData.push(item);
+  });
+
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
         <Text style={styles.title}>{title}</Text>
-        {onSeeAll && data.length > 0 && (
+        {onSeeAll && uniqueData.length > 0 && (
           <TouchableOpacity onPress={onSeeAll} style={styles.seeAllButton}>
             <Text style={styles.seeAllText}>모두 보기</Text>
             <Ionicons name="chevron-forward" size={16} color="#b3b3b3" />
@@ -18,8 +33,13 @@ const HorizontalPlaylist = ({ title, data, onPlaylistPress, onItemPress, onSeeAl
         )}
       </View>
       <FlatList
-        data={data}
-        keyExtractor={(item) => item.id.toString()}
+        data={uniqueData}
+        keyExtractor={(item, index) => {
+          if (item?.id !== undefined && item?.id !== null) {
+            return `${title}-${item.id}`;
+          }
+          return `${title}-${index}`;
+        }}
         renderItem={({ item }) => (
           <PlaylistCard 
             playlist={item} 

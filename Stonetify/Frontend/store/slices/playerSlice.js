@@ -3,7 +3,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { getAdapter, getAdapterType, ensureSpotifyAdapter } from '../../../Frontend/adapters';
 import { showToast } from '../../utils/toast';
 import { track as analyticsTrack } from '../../utils/analytics';
-import { startPlaybackHistory, completePlaybackHistory } from '../../services/apiService';
+import { startPlaybackHistory, completePlaybackHistory, getRemoteDevices, transferRemotePlayback } from '../../services/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearSpotifySession } from './spotifySlice';
 
@@ -180,8 +180,29 @@ export const playTrack = createAsyncThunk(
       }
       
       dispatch(playerSlice.actions.setLoading());
+
+      try {
+        const userId = reduxState?.auth?.user?.id || reduxState?.auth?.user?.userId;
+        if (userId) {
+          const devices = await getRemoteDevices(userId);
+          const mobileRegex = /(iphone|ipad|android|mobile|ios)/i;
+          const autoDevice = devices?.devices?.find((device) => mobileRegex.test(device?.name || ''))
+            || devices?.devices?.find((device) => device?.type === 'Smartphone');
+
+          if (autoDevice && autoDevice?.id !== preferredDeviceId) {
+            dispatch(playerSlice.actions.setPlaybackDeviceInfo({
+              id: autoDevice.id,
+              name: autoDevice.name,
+            }));
+            await transferRemotePlayback({ userId, device_id: autoDevice.id, play: false });
+          }
+        }
+      } catch (deviceError) {
+        console.warn('[playerSlice] Device selection failed:', deviceError.message || deviceError);
+      }
+
       // Load track on Spotify adapter
-      await adapter.load(track, true, { deviceId: preferredDeviceId });
+      await adapter.load(track, true, { deviceId: reduxState?.player?.playbackDeviceId || preferredDeviceId });
       // Analytics & history
       if (track.id) {
         analyticsTrack('play_start', {
@@ -279,9 +300,23 @@ export const setPosition = createAsyncThunk(
 export const loadQueue = createAsyncThunk(
   'player/loadQueue',
   async ({ tracks, startIndex = 0 }, { dispatch }) => {
-    if (!Array.isArray(tracks) || tracks.length === 0) return { tracks: [], startIndex: 0 };
-    await dispatch(playFromQueue(startIndex));
-    return { tracks, startIndex };
+    if (!Array.isArray(tracks) || tracks.length === 0) {
+      return { tracks: [], startIndex: 0 };
+    }
+
+    const normalizedQueue = tracks
+      .map(normalizeTrack)
+      .filter(Boolean);
+
+    if (normalizedQueue.length === 0) {
+      return { tracks: [], startIndex: 0 };
+    }
+
+    const safeIndex = Math.max(0, Math.min(startIndex, normalizedQueue.length - 1));
+    dispatch(playerSlice.actions.replaceQueue({ queue: normalizedQueue, queueIndex: safeIndex }));
+    await dispatch(playFromQueue(safeIndex));
+
+    return { tracks: normalizedQueue, startIndex: safeIndex };
   }
 );
 

@@ -5,12 +5,12 @@ import { Platform } from 'react-native';
 
 // 환경 설정 정보
 const CONFIG = {
-  LOCAL_IP: '192.168.219.108',
+  LOCAL_IP: '172.31.45.120',
   BACKEND_PORT: 5000,
   PROXY_PORT: 3001,
   TIMEOUT: 15000,
   RETRY_DELAY: 1000,
-  PRODUCTION_API: 'http://192.168.219.108:5000/api/',
+  PRODUCTION_API: 'http://172.31.45.120:5000/api/',
 };
 
 // ?�경�?API URL ?�정 (최적?�된 버전)

@@ -5,6 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists } from '../store/slices/playlistSlice';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
+import { addRecentPlaylist } from '../store/slices/recentPlaylistsSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SongListItem from '../components/SongListItem';
@@ -75,6 +76,35 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       setIsLiked(liked);
     }
   }, [currentPlaylist, likedPlaylists]);
+
+  useEffect(() => {
+    if (!currentPlaylist || !currentPlaylist.id) {
+      return;
+    }
+
+    const coverImages = Array.isArray(currentPlaylist.cover_images) && currentPlaylist.cover_images.length > 0
+      ? currentPlaylist.cover_images
+      : (currentPlaylist.songs || [])
+          .slice(0, 4)
+          .map((song) => song?.album_cover_url)
+          .filter(Boolean);
+
+    const coverImageUrl = coverImages.length > 0
+      ? coverImages[0]
+      : currentPlaylist.cover_image_url || null;
+
+    dispatch(addRecentPlaylist({
+      id: currentPlaylist.id,
+      title: currentPlaylist.title,
+      description: currentPlaylist.description,
+      cover_images: coverImages,
+      cover_image_url: coverImageUrl,
+      user: currentPlaylist.user ? {
+        id: currentPlaylist.user.id,
+        display_name: currentPlaylist.user.display_name,
+      } : null,
+    }));
+  }, [dispatch, currentPlaylist?.id]);
 
 
   
