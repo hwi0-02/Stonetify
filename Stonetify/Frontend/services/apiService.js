@@ -3,14 +3,51 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+const parseNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const LOCAL_IP = process.env.EXPO_PUBLIC_LOCAL_IP || process.env.BACKEND_HOST || 'localhost';
+const BACKEND_PORT = parseNumber(process.env.EXPO_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT, 5000);
+const PROXY_PORT = parseNumber(process.env.EXPO_PUBLIC_PROXY_PORT || process.env.PROXY_PORT, 3001);
+const TIMEOUT = parseNumber(process.env.EXPO_PUBLIC_API_TIMEOUT || process.env.API_TIMEOUT, 15000);
+const RETRY_DELAY = parseNumber(
+  process.env.EXPO_PUBLIC_API_RETRY_DELAY ||
+  process.env.EXPO_PUBLIC_RETRY_DELAY ||
+  process.env.RETRY_DELAY,
+  1000
+);
+
+const LOCAL_API_URL = process.env.EXPO_PUBLIC_LOCAL_API_URL ||
+  process.env.DEV_API_URL ||
+  process.env.EXPO_PUBLIC_API_URL ||
+  `http://${LOCAL_IP}:${BACKEND_PORT}/api/`;
+
+const TUNNEL_API_URL = process.env.EXPO_PUBLIC_TUNNEL_API_URL ||
+  process.env.TUNNEL_API_URL ||
+  process.env.EXPO_PUBLIC_API_URL ||
+  LOCAL_API_URL;
+
+const PROXY_API_URL = process.env.EXPO_PUBLIC_PROXY_API_URL ||
+  process.env.PROXY_API_URL ||
+  `http://localhost:${PROXY_PORT}/proxy/api/`;
+
+const PRODUCTION_API = process.env.EXPO_PUBLIC_PROD_API_URL ||
+  process.env.PROD_API_URL ||
+  LOCAL_API_URL;
+
 // 환경 설정 정보
 const CONFIG = {
-  LOCAL_IP: '172.31.45.120',
-  BACKEND_PORT: 5000,
-  PROXY_PORT: 3001,
-  TIMEOUT: 15000,
-  RETRY_DELAY: 1000,
-  PRODUCTION_API: 'http://172.31.45.120:5000/api/',
+  LOCAL_IP,
+  BACKEND_PORT,
+  PROXY_PORT,
+  TIMEOUT,
+  RETRY_DELAY,
+  LOCAL_API_URL,
+  TUNNEL_API_URL,
+  PROXY_API_URL,
+  PRODUCTION_API,
 };
 
 // ?�경�?API URL ?�정 (최적?�된 버전)
@@ -21,8 +58,8 @@ const getApiUrl = () => {
       
       // HTTPS ?�널 모드 감�? �??�록???�버 ?�용
       if (currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'))) {
-        console.log('?�� ?�널 모드: HTTPS ?�록???�버 ?�용');
-        return `http://localhost:${CONFIG.PROXY_PORT}/proxy/api/`;
+        console.log('Tunnel mode detected: using HTTPS proxy endpoint');
+        return CONFIG.PROXY_API_URL;
       }
       
       // 로컬 ??개발
@@ -34,7 +71,7 @@ const getApiUrl = () => {
     
     if (hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'))) {
       // 모바???�널 모드?�서??IP 주소 ?�용
-      return process.env.EXPO_PUBLIC_API_URL || `http://${CONFIG.LOCAL_IP}:${CONFIG.BACKEND_PORT}/api/`;
+      return CONFIG.TUNNEL_API_URL;
     }
     
     // 안드로이드 에뮬레이터는 10.0.2.2를 통해 호스트(PC)의 localhost에 접근합니다.
@@ -43,7 +80,7 @@ const getApiUrl = () => {
     }
 
     // ?�반 로컬 ?�트?�크 (iOS 시뮬레이터/실기기 등)
-    return `http://${CONFIG.LOCAL_IP}:${CONFIG.BACKEND_PORT}/api/`;
+    return CONFIG.LOCAL_API_URL;
   }
   
   // ?�로?�션 ?�경
