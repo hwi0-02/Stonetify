@@ -1,5 +1,3 @@
-// C:\Stonetify\Stonetify\Backend\controllers\spotifyController.js
-
 const asyncHandler = require('express-async-handler');
 const axios = require('axios');
 const qs = require('qs');
@@ -46,14 +44,14 @@ const getSpotifyToken = asyncHandler(async () => {
     return spotifyToken.value;
 });
 
-// @desc    Search tracks on Spotify
-// @route   GET /api/spotify/search
-// @access  Private
+// @설명    Spotify에서 트랙 검색
+// @경로   GET /api/spotify/search
+// @권한   Private
 const searchTracks = asyncHandler(async (req, res) => {
     const query = req.query.q;
     if (!query) {
         res.status(400);
-        throw new Error('Search query is required');
+        throw new Error('검색어를 입력해주세요.');
     }
 
     const token = await getSpotifyToken();

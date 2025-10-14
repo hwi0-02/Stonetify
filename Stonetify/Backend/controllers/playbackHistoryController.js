@@ -1,16 +1,16 @@
-// Playback History Event Controller
-// Provides endpoints for client to record playback lifecycle events.
+// 재생 기록 컨트롤러
+// 클라이언트가 재생 시작/완료 이벤트를 기록할 수 있도록 API를 제공한다.
 // POST /api/spotify/playback/history/start { userId, track: { id, name, artists, uri }, playbackSource }
 // POST /api/spotify/playback/history/complete { userId, historyId, positionMs, durationMs }
-// Optionally used for skip by sending positionMs < durationMs.
+// positionMs < durationMs로 전달하면 중간에 넘김(스킵)한 것으로 간주한다.
 
 const PlaybackHistoryModel = require('../models/playback_history');
 
 function validateTrack(track){
   if(!track || !track.id || !track.name) throw new Error('track.id and track.name required');
   
-  // Validate that track.id is a Spotify ID format (22 alphanumeric chars or spotify:track: URI)
-  // Firebase IDs start with '-' and contain underscores, which are invalid for Spotify
+  // track.id가 Spotify ID(22자리 영문자/숫자) 또는 spotify:track: URI인지 확인한다.
+  // Firebase에서 생성된 ID는 '-'나 '_'를 포함하므로 Spotify에서 사용할 수 없다.
   const isSpotifyUri = track.id?.startsWith('spotify:track:');
   const isSpotifyId = /^[a-zA-Z0-9]{22}$/.test(track.id);
   

@@ -1,5 +1,5 @@
-// Spotify Playback Control Proxy Controller (uses stored refresh token)
-// Endpoints (to be wired):
+// 저장된 refresh token을 사용해 Spotify 재생 제어를 위임하는 컨트롤러
+// 지원 엔드포인트 목록:
 //  GET    /api/spotify/playback/state
 //  PUT    /api/spotify/playback/play
 //  PUT    /api/spotify/playback/pause
@@ -10,7 +10,7 @@
 //  GET    /api/spotify/me/devices
 //  PUT    /api/spotify/playback/transfer
 //
-// Auth strategy: expects X-User-Id header or userId query/body. For production integrate real auth middleware.
+// 인증 방식: 헤더 x-user-id 또는 쿼리/바디의 userId를 기대하며, 실서비스에서는 인증 미들웨어와 연동해야 한다.
 
 const axios = require('axios');
 const SpotifyTokenModel = require('../models/spotify_token');
@@ -18,7 +18,7 @@ const SpotifyTokenModel = require('../models/spotify_token');
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 const SPOTIFY_API_BASE_URL = 'https://api.spotify.com/v1';
 
-// In-memory short-lived access token cache: { userId: { accessToken, expiresAt } }
+// 액세스 토큰을 짧은 시간 동안 보관하는 인메모리 캐시 { userId: { accessToken, expiresAt } }
 const accessCache = new Map();
 
 function prepareTokenRequest(params, clientIdOverride) {
@@ -29,7 +29,7 @@ function prepareTokenRequest(params, clientIdOverride) {
   const clientId = clientIdOverride || envId || params.get('client_id');
   if (!clientId) throw new Error('Spotify client_id is missing');
   if (!params.get('client_id')) params.append('client_id', clientId);
-  // PKCE: do not set Authorization header; body client_id only
+  // PKCE 규칙상 Authorization 헤더를 사용하지 않고 body에 client_id만 포함한다
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   return { headers, clientId };
 }
@@ -40,13 +40,13 @@ async function getUserId(req){
   return userId;
 }
 
-// Common error handler for TOKEN_REVOKED errors
+// TOKEN_REVOKED 상황에 대한 공통 에러 처리기
 function handlePlaybackError(e, res, operation) {
-  // Check if it's a token revoked error
+  // 토큰이 회수된 경우인지 먼저 확인한다
   if (e.code === 'TOKEN_REVOKED' || e.requiresReauth) {
     console.error(`🔴 [Playback][${operation}] Token revoked - user needs to reconnect`);
     return res.status(401).json({
-      message: 'Your Spotify session has expired or been revoked. Please reconnect your Spotify account.',
+      message: 'Spotify 세션이 만료되었거나 회수되었습니다. Spotify 계정을 다시 연결해주세요.',
       error: 'TOKEN_REVOKED',
       requiresReauth: true
     });
@@ -58,16 +58,16 @@ function handlePlaybackError(e, res, operation) {
     message: e.message
   });
 
-  // Provide more helpful error messages
-  let errorMessage = `Failed to ${operation}`;
+  // 사용자에게 전달할 에러 메시지를 정리한다
+  let errorMessage = `${operation} 요청에 실패했습니다.`;
   let errorDetails = e.response?.data || e.message;
 
   if (e.response?.status === 404) {
-    errorMessage = 'No active device found';
-    errorDetails = 'Please open Spotify app on your phone, computer, or any connected device.';
+    errorMessage = '활성화된 Spotify 장치를 찾지 못했습니다.';
+    errorDetails = '휴대전화, 컴퓨터 등에서 Spotify 앱을 먼저 실행해주세요.';
   } else if (e.response?.status === 403) {
-    errorMessage = 'Playback forbidden';
-    errorDetails = 'Your Spotify account may not have premium access or the device is restricted.';
+    errorMessage = '재생 권한이 없습니다.';
+    errorDetails = 'Spotify 프리미엄이 아니거나 해당 장치에서 재생이 제한되었을 수 있습니다.';
   }
 
   return res.status(e.response?.status || 500).json({
@@ -103,7 +103,7 @@ async function getAccessTokenForUser(userId){
   try {
     const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
     const { access_token, expires_in, refresh_token: newRefresh, scope } = tokenResp.data || {};
-    // Persist rotated refresh token, if provided
+  // Spotify가 새 refresh token을 제공하면 저장한다
     if (newRefresh) {
       try {
         await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || rec.scope, { historyLimit: 5, maxPerHour: 12, clientId: rec.client_id || process.env.SPOTIFY_CLIENT_ID || null });
@@ -114,12 +114,12 @@ async function getAccessTokenForUser(userId){
     accessCache.set(userId, { accessToken: access_token, expiresAt: Date.now() + (expires_in*1000) });
     return access_token;
   } catch (error) {
-    // Handle Spotify token refresh errors
+  // Spotify 토큰 갱신 실패 처리
     if (error.response?.status === 400 && error.response?.data?.error === 'invalid_grant') {
       console.error('🔴 [getAccessTokenForUser] Refresh token revoked by Spotify:', userId);
-      // Mark token as revoked in database
+  // 데이터베이스에 토큰이 회수되었음을 기록
       await SpotifyTokenModel.markRevoked(userId);
-      // Clear cache
+  // 캐시 제거
       accessCache.delete(userId);
       
       const revokedError = new Error('Refresh token has been revoked by Spotify. Please reconnect your account.');
@@ -188,7 +188,7 @@ exports.play = async (req,res) => {
       device_id
     });
     
-    // Validate Spotify URI format before making API call
+  // Spotify URI 형식을 사전에 검증한다
     if (uris && Array.isArray(uris)) {
       for (const uri of uris) {
         if (!uri.startsWith('spotify:track:') && !uri.startsWith('spotify:episode:')) {
@@ -198,7 +198,7 @@ exports.play = async (req,res) => {
           });
         }
         
-        // Check for Firebase ID patterns in URI
+  // Firebase에서 생성된 ID 패턴이 포함되어 있는지 확인한다
         const trackId = uri.split(':')[2];
         if (trackId && (trackId.startsWith('-') || trackId.includes('_'))) {
           console.error('❌ [Playback][play] Firebase ID detected in URI:', uri);
@@ -209,7 +209,7 @@ exports.play = async (req,res) => {
       }
     }
     
-    // Check for available devices first (only if playing new track)
+  // 새로운 트랙을 재생할 경우 먼저 사용 가능한 장치를 확인한다
     if (uris || context_uri) {
       try {
         const devices = await spotifyRequest(userId, 'get', '/me/player/devices', null);
@@ -225,8 +225,7 @@ exports.play = async (req,res) => {
           });
         }
         
-        // Prefer explicitly requested device, fall back to active or first available as per Spotify docs
-        // https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback
+  // 명시된 장치가 있으면 사용하고, 그렇지 않으면 활성 장치나 첫 번째 장치를 선택한다
         if (targetDeviceId) {
           const matched = devices.devices.find(d => d.id === targetDeviceId);
           console.log('🎯 [Playback][play] Using requested device:', matched?.name || 'Unknown', targetDeviceId);
@@ -244,12 +243,12 @@ exports.play = async (req,res) => {
           }
         }
       } catch (deviceError) {
-        // If TOKEN_REVOKED, propagate immediately
+        // TOKEN_REVOKED라면 즉시 상위로 전달한다
         if (deviceError.code === 'TOKEN_REVOKED' || deviceError.requiresReauth) {
           throw deviceError;
         }
         console.error('⚠️ [Playback][play] Could not check devices:', deviceError.message);
-        // Continue anyway - let Spotify API handle it
+        // 장치 확인에 실패해도 Spotify API에 위임한다
       }
     }
     
@@ -260,7 +259,7 @@ exports.play = async (req,res) => {
     
     console.log('📤 [Playback][play] Sending to Spotify API:', body);
     
-    // Device specific endpoint uses query param
+  // 특정 장치로 보낼 때는 쿼리 파라미터를 사용한다
     const qp = targetDeviceId ? `?device_id=${encodeURIComponent(targetDeviceId)}` : '';
     await spotifyRequest(userId,'put',`/me/player/play${qp}`, body);
     

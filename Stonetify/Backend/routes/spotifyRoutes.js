@@ -8,14 +8,14 @@ const { authLimiter, playbackLimiter } = require('../middleware/rateLimiter');
 
 router.get('/search', playbackLimiter, spotifyController.searchTracks);
 
-// Spotify PKCE Auth (Phase B)
+// Spotify PKCE 인증 (Phase B)
 router.post('/auth/token', authLimiter, spotifyAuthController.exchangeCode);
 router.post('/auth/refresh', authLimiter, spotifyAuthController.refreshToken);
 router.post('/auth/revoke', authLimiter, spotifyAuthController.revoke);
 router.get('/auth/premium-status', authLimiter, spotifyAuthController.getMockPremiumStatus);
 router.get('/me', authLimiter, spotifyAuthController.getProfile);
 
-// Playback control (Premium full-track path) – guarded by playbackLimiter
+// 재생 제어 엔드포인트 (프리미엄 전체 트랙 재생) - playbackLimiter 적용
 router.get('/playback/state', playbackLimiter, spotifyPlaybackController.getState);
 router.get('/me/devices', playbackLimiter, spotifyPlaybackController.getDevices);
 router.put('/playback/play', playbackLimiter, spotifyPlaybackController.play);
@@ -26,7 +26,7 @@ router.put('/playback/seek', playbackLimiter, spotifyPlaybackController.seek);
 router.put('/playback/volume', playbackLimiter, spotifyPlaybackController.setVolume);
 router.put('/playback/transfer', playbackLimiter, spotifyPlaybackController.transfer);
 
-// Playback history events
+// 재생 기록 이벤트 수집
 router.post('/playback/history/start', playbackLimiter, playbackHistoryController.start);
 router.post('/playback/history/complete', playbackLimiter, playbackHistoryController.complete);
 

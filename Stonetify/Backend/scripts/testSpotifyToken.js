@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /*
- * Simple utility to validate a Spotify access token against the Web API.
+ * Spotify 액세스 토큰을 Web API로 검증하는 간단한 도구입니다.
  *
- * Usage:
+ * 사용법:
  *   SPOTIFY_TEST_ACCESS_TOKEN="<token>" node scripts/testSpotifyToken.js
- *   # or provide an endpoint
+ *   # 다른 엔드포인트를 지정하려면
  *   SPOTIFY_TEST_ACCESS_TOKEN="<token>" node scripts/testSpotifyToken.js /v1/me/player
  */
 
 const axios = require('axios');
 const dotenv = require('dotenv');
 
-// Load variables from .env if present
+// .env 파일이 있다면 환경 변수를 불러온다
 dotenv.config({ path: require('path').resolve(__dirname, '..', '.env') });
 
 const token = process.env.SPOTIFY_TEST_ACCESS_TOKEN || process.env.SPOTIFY_ACCESS_TOKEN;

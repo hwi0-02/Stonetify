@@ -1,5 +1,5 @@
-// Spotify PKCE Auth Controller (Fixed PKCE-only, 2025-10-08)
-// Resolves: refresh token revoked / no stored refresh token issues
+// Spotify PKCE 인증 컨트롤러 (PKCE 전용, 2025-10-08 개선)
+// 목적: refresh token 회수 문제 및 누락된 토큰 처리
 
 const axios = require('axios');
 const SpotifyTokenModel = require('../models/spotify_token');
@@ -27,7 +27,7 @@ function prepareTokenRequest(params, clientIdOverride) {
 }
 
 // ------------------------
-// 1️⃣ Spotify Code Exchange (PKCE)
+// 1️⃣ Spotify 코드 교환 (PKCE)
 // ------------------------
 exports.exchangeCode = async (req, res) => {
   try {
@@ -86,7 +86,7 @@ exports.exchangeCode = async (req, res) => {
 };
 
 // ------------------------
-// 2️⃣ Refresh Token Handler (PKCE)
+// 2️⃣ 리프레시 토큰 갱신 처리 (PKCE)
 // ------------------------
 exports.refreshToken = async (req, res) => {
   try {
@@ -151,7 +151,7 @@ exports.refreshToken = async (req, res) => {
 };
 
 // ------------------------
-// 3️⃣ Access Token by User (PKCE)
+// 3️⃣ 사용자별 액세스 토큰 발급 (PKCE)
 // ------------------------
 const axiosRef = axios;
 async function getAccessTokenForUser(userId) {
@@ -169,7 +169,7 @@ async function getAccessTokenForUser(userId) {
   try {
     const tokenResp = await axiosRef.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
     const { access_token, refresh_token: newRefresh, scope } = tokenResp.data || {};
-    // If Spotify rotated refresh token here, persist it
+  // Spotify가 refresh token을 회전시킨 경우 새 값을 저장한다
     if (newRefresh) {
       try {
         const recNow = await SpotifyTokenModel.getByUser(userId);
@@ -195,7 +195,7 @@ async function getAccessTokenForUser(userId) {
 }
 
 // ------------------------
-// 4️⃣ User Profile & Premium
+// 4️⃣ 사용자 프로필 및 프리미엄 확인
 // ------------------------
 exports.getMockPremiumStatus = async (req, res) => {
   try {
@@ -232,7 +232,7 @@ exports.getProfile = async (req, res) => {
 };
 
 // ------------------------
-// 5️⃣ Revoke (Disconnect)
+// 5️⃣ 연결 해제 처리
 // ------------------------
 exports.revoke = async (req, res) => {
   try {

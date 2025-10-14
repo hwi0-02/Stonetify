@@ -11,7 +11,6 @@ const {
 } = require('../controllers/postController');
 const { protect, optionalProtect } = require('../middleware/authMiddleware');
 
-// @/api/posts/
 router.route('/')
 	.get(optionalProtect, getPosts)
 	.post(protect, createPost);

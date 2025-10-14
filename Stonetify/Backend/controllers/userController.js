@@ -8,7 +8,7 @@ const { RealtimeDBHelpers, COLLECTIONS } = require('../config/firebase');
 // 비밀번호 재설정 코드 유효시간 (ms)
 const PASSWORD_RESET_TTL = 10 * 60 * 1000; // 10분
 
-// ==================== UTILITIES ====================
+// ==================== 유틸리티 ====================
 
 // JWT 토큰 생성 유틸리티
 const generateToken = (id) => {
@@ -91,7 +91,7 @@ const validateUserInput = (email, password, display_name = null) => {
   return errors;
 };
 
-// ==================== CONTROLLERS ====================
+// ==================== 컨트롤러 ====================
 
 // 임시: 사용자 데이터 조회 함수 (디버깅용)
 const getUserData = asyncHandler(async (req, res) => {
@@ -318,7 +318,7 @@ const loginUser = asyncHandler(async (req, res) => {
     
     console.log('✅ 로그인 성공:', { userId: user.id, email });
     
-    // Generate JWT token
+    // JWT 토큰을 새로 생성한다
     const token = generateToken(user.id);
     res.json({
       ...formatUserResponse(user),

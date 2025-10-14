@@ -1,8 +1,8 @@
 const express = require('express');
 const path = require('path');
-// Explicitly load .env from Backend directory (when starting from repo root)
+// 저장소 루트에서 실행할 때를 대비해 Backend 디렉터리의 .env를 명시적으로 불러온다
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-// Sentry (optional – will be no-op if DSN not provided)
+// Sentry 초기화 (DSN이 없으면 아무 동작도 하지 않음)
 let Sentry = null;
 try {
   Sentry = require('@sentry/node');
@@ -19,9 +19,8 @@ try {
 const cors = require('cors');
 const https = require('https');
 const fs = require('fs');
-// (path already imported above)
 const { errorHandler } = require('./middleware/errorMiddleware');
-// Firebase 초기화 (with basic env validation before require to provide clearer errors)
+// Firebase 초기화 전에 필요한 환경 변수를 확인한다
 const requiredFirebaseVars = [
   'FIREBASE_PROJECT_ID',
   'FIREBASE_PRIVATE_KEY_ID',
@@ -64,7 +63,7 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
-// Sentry request handler (if initialized)
+// Sentry가 활성화된 경우 요청 미들웨어 적용
 if (Sentry && Sentry.getCurrentHub().getClient()) {
   app.use(Sentry.Handlers.requestHandler());
 }
@@ -74,14 +73,14 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-// API 라우트 설정
+// API 라우트 매핑
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/playlists', require('./routes/playlistRoutes'));
 app.use('/api/posts', require('./routes/postRoutes'));
 app.use('/api/spotify', require('./routes/spotifyRoutes'));
 app.use('/api/recommendations', require('./routes/recommendationRoutes'));
 
-// Spotify OAuth redirect helper (PKCE bridge for Expo / web auth flows)
+// Expo 및 웹 인증 흐름을 위한 Spotify OAuth 리디렉션 페이지
 app.get('/spotify-callback', (req, res) => {
   const fallbackUri = process.env.SPOTIFY_APP_REDIRECT || 'stonetify://spotify-callback';
   const fallbackJson = JSON.stringify(fallbackUri);
@@ -145,17 +144,17 @@ app.get('/spotify-callback', (req, res) => {
         }
       }
 
-      var fallback = ${fallbackJson}; // e.g., 'stonetify://spotify-callback'
+  var fallback = ${fallbackJson}; // 예시: 'stonetify://spotify-callback'
       var schemeUrl = (fallback && fallback.toLowerCase() !== 'none') ? buildUrl(fallback) : null;
 
-      // Android intent fallback for cases where custom scheme is blocked
+  // 커스텀 스킴이 차단된 경우를 대비한 Android 인텐트 URL
       var androidIntentUrl = null;
       try {
         var pkg = ua.includes('expo') ? 'host.exp.exponent' : 'com.yourcompany.stonetify';
         androidIntentUrl = 'intent://spotify-callback' + (payload ? ('?' + payload) : '') + '#Intent;scheme=stonetify;package=' + pkg + ';end';
       } catch (_) {}
 
-      // Wire up the visible button so user can manually trigger
+  // 사용자가 수동으로 앱을 여는 버튼 연결
       var btn = document.getElementById('open-app');
       if (btn) {
         var manualTarget = schemeUrl || androidIntentUrl || fallback || '#';
@@ -165,7 +164,7 @@ app.get('/spotify-callback', (req, res) => {
         });
       }
 
-      // Try programmatic deep link shortly after load
+  // 페이지 로드 직후 자동으로 딥링크를 시도
       setTimeout(function() {
         try {
           if (schemeUrl) {
@@ -178,7 +177,7 @@ app.get('/spotify-callback', (req, res) => {
         }
       }, 100);
 
-      // Attempt to close if we were a popup (may be blocked if not script-opened)
+      // 팝업으로 열렸을 경우 창 닫기를 시도 (차단될 수 있음)
       setTimeout(function () { try { window.close(); } catch (_) {} }, 1500);
     })();
   </script>
@@ -187,15 +186,15 @@ app.get('/spotify-callback', (req, res) => {
   res.status(200).type('html').send(html);
 });
 
-// Firebase 연결 확인
+// Firebase 연결 로그
 console.log('🔥 Firebase Realtime Database 연결됨');
 
-// Health check
+// 헬스 체크 엔드포인트
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', ts: Date.now() });
 });
 
-// Sentry error handler first
+// Sentry 에러 핸들러를 우선 적용
 if (Sentry && Sentry.getCurrentHub().getClient()) {
   app.use(Sentry.Handlers.errorHandler());
 }

@@ -69,27 +69,27 @@ const enrichPost = async (post, viewerId = null) => {
     };
 };
 
-// @desc    Create a post
-// @route   POST /api/posts
-// @access  Private
+// @설명    게시물 생성
+// @경로   POST /api/posts
+// @권한   Private
 const createPost = asyncHandler(async (req, res) => {
     const { playlist_id, content } = req.body;
 
     if (!req.user || !req.user.id) {
         res.status(401);
-        throw new Error('User not authenticated');
+        throw new Error('로그인 상태가 아닙니다.');
     }
 
     if (!playlist_id || !content) {
         res.status(400);
-        throw new Error('Please provide playlist_id and content');
+        throw new Error('playlist_id와 content를 모두 입력해주세요.');
     }
 
     const playlist = await Playlist.findById(playlist_id);
 
     if (!playlist || playlist.user_id !== req.user.id) {
         res.status(404);
-        throw new Error('Playlist not found or you do not own this playlist');
+        throw new Error('플레이리스트를 찾을 수 없거나 소유 중인 플레이리스트가 아닙니다.');
     }
 
     const postId = await Post.create({
@@ -104,9 +104,9 @@ const createPost = asyncHandler(async (req, res) => {
     res.status(201).json(enrichedPost);
 });
 
-// @desc    Get all posts (feed)
-// @route   GET /api/posts
-// @access  Public (optional auth)
+// @설명    게시물 목록 조회 (피드)
+// @경로   GET /api/posts
+// @권한   Public (선택적 인증)
 const getPosts = asyncHandler(async (req, res) => {
     const recentPosts = await Post.getRecentPosts();
     const viewerId = req.user ? req.user.id : null;
@@ -118,9 +118,9 @@ const getPosts = asyncHandler(async (req, res) => {
     res.status(200).json(enrichedPosts.filter(Boolean));
 });
 
-// @desc    Like a post
-// @route   POST /api/posts/:id/like
-// @access  Private
+// @설명    게시물 좋아요 토글
+// @경로   POST /api/posts/:id/like
+// @권한   Private
 const likePost = asyncHandler(async (req, res) => {
     const { id: postId } = req.params;
     const userId = req.user.id;
@@ -128,7 +128,7 @@ const likePost = asyncHandler(async (req, res) => {
     const post = await Post.findById(postId);
     if (!post) {
         res.status(404);
-        throw new Error('Post not found');
+        throw new Error('게시물을 찾을 수 없습니다.');
     }
 
     const result = await PostLike.toggle(userId, postId);
@@ -140,9 +140,9 @@ const likePost = asyncHandler(async (req, res) => {
     });
 });
 
-// @desc    Update a post
-// @route   PUT /api/posts/:id
-// @access  Private
+// @설명    게시물 수정
+// @경로   PUT /api/posts/:id
+// @권한   Private
 const updatePost = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { content, playlist_id } = req.body;
@@ -175,9 +175,9 @@ const updatePost = asyncHandler(async (req, res) => {
     res.status(200).json(enrichedPost);
 });
 
-// @desc    Delete a post
-// @route   DELETE /api/posts/:id
-// @access  Private
+// @설명    게시물 삭제
+// @경로   DELETE /api/posts/:id
+// @권한   Private
 const deletePost = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
@@ -199,9 +199,9 @@ const deletePost = asyncHandler(async (req, res) => {
     res.status(200).json({ id, message: '게시물이 삭제되었습니다.' });
 });
 
-// @desc    Toggle save/unsave a post
-// @route   POST /api/posts/:id/toggle-save
-// @access  Private
+// @설명    게시물 저장/저장 해제 토글
+// @경로   POST /api/posts/:id/toggle-save
+// @권한   Private
 const toggleSavePost = asyncHandler(async (req, res) => {
     const { id: postId } = req.params;
     const userId = req.user.id;
@@ -216,9 +216,9 @@ const toggleSavePost = asyncHandler(async (req, res) => {
     res.status(200).json(result);
 });
 
-// @desc    Get saved posts for current user
-// @route   GET /api/posts/saved/me
-// @access  Private
+// @설명    내 저장 게시물 목록 조회
+// @경로   GET /api/posts/saved/me
+// @권한   Private
 const getSavedPosts = asyncHandler(async (req, res) => {
     const userId = req.user.id;
     const savedRelations = await SavedPost.findByUserId(userId);

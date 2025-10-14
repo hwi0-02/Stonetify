@@ -15,7 +15,7 @@ const serviceAccount = {
   universe_domain: 'googleapis.com'
 };
 
-// Firebase Admin 초기??
+// Firebase Admin 초기화 가능 여부
 let initOk = true;
 if (!serviceAccount.project_id || typeof serviceAccount.project_id !== 'string') {
   console.warn('[Firebase] Invalid or missing FIREBASE_PROJECT_ID. Firebase Admin will not be initialized.');

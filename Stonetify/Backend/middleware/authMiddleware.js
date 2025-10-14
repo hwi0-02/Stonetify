@@ -7,7 +7,7 @@ const attachUserFromToken = async (token) => {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
   const user = await User.findById(decoded.id);
   if (!user) {
-    throw new Error('User not found');
+    throw new Error('사용자를 찾을 수 없습니다.');
   }
   return user;
 };

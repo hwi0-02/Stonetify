@@ -11,14 +11,10 @@ const {
     unfollowUser,
     getFollowers,
     getFollowing,
-    resetPasswordForEmail,
-    getUserData,
-    testPasswordHash,
-    verifyExistingHash
+    requestPasswordReset,
+    verifyPasswordResetCode
 } = require('../controllers/userController');
 const { protect, optionalProtect } = require('../middleware/authMiddleware');
-
-// @/api/users/
 
 // 연결 테스트 엔드포인트
 router.get('/test', (req, res) => {
@@ -35,19 +31,9 @@ router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
 router.get('/:id/profile', optionalProtect, getUserProfile);
 
-// 개발용 비밀번호 재설정
-router.post('/reset-password', resetPasswordForEmail);
-// 새 비밀번호 재설정 요청 (코드 발송)
-router.post('/password-reset/request', require('../controllers/userController').requestPasswordReset);
-// 비밀번호 재설정 코드 검증 및 비밀번호 변경
-router.post('/password-reset/verify', require('../controllers/userController').verifyPasswordResetCode);
-
-// 디버깅용 사용자 데이터 조회
-router.get('/debug/:email', getUserData);
-
-// 해시 테스트용 엔드포인트
-router.get('/test-hash', testPasswordHash);
-router.get('/verify-hash', verifyExistingHash);
+// 비밀번호 재설정 엔드포인트
+router.post('/password-reset/request', requestPasswordReset);
+router.post('/password-reset/verify', verifyPasswordResetCode);
 
 router.post('/follow', protect, followUser);
 router.delete('/unfollow', protect, unfollowUser); // DELETE 메소드 사용
