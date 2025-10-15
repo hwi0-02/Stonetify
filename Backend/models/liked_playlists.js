@@ -1,16 +1,10 @@
-const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { likedPlaylist: likedPlaylistValidators } = require('../utils/validators');
 
 class LikedPlaylist {
   static async create(likedPlaylistData) {
-    const { user_id, playlist_id } = likedPlaylistData;
-    
-    const likedPlaylist = {
-      user_id,
-      playlist_id,
-      liked_at: Date.now()
-    };
-    
-    const likedPlaylistId = await RealtimeDBHelpers.createDocument(COLLECTIONS.LIKED_PLAYLISTS, likedPlaylist);
+    const payload = likedPlaylistValidators.validateLikedPlaylistCreate(likedPlaylistData);
+    const likedPlaylistId = await RealtimeDBHelpers.createDocument(COLLECTIONS.LIKED_PLAYLISTS, payload);
     return likedPlaylistId;
   }
 
@@ -27,11 +21,11 @@ class LikedPlaylist {
   }
 
   static async findByUserAndPlaylist(userId, playlistId) {
-    const allLikedPlaylists = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.LIKED_PLAYLISTS);
-    const match = allLikedPlaylists.find(lp => 
-      lp.user_id === userId && lp.playlist_id === playlistId
-    );
-    return match || null;
+    const matches = await RealtimeDBHelpers.queryDocumentsMultiple(COLLECTIONS.LIKED_PLAYLISTS, [
+      { field: 'user_id', operator: '==', value: userId },
+      { field: 'playlist_id', operator: '==', value: playlistId },
+    ]);
+    return matches[0] || null;
   }
 
   static async delete(id) {

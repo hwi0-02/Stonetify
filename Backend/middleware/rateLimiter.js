@@ -1,10 +1,11 @@
-// Rate limiting middleware using express-rate-limit. Redis store optional.
+// express-rate-limit을 활용한 요청 제한 미들웨어 (Redis 저장소는 선택 사항)
 const rateLimit = require('express-rate-limit');
+const { logger } = require('../utils/logger');
 let RedisStore = null;
 let redisClient = null;
 
 try {
-  // Lazy require to avoid error if redis package not installed yet.
+  // redis 패키지가 설치되지 않은 환경에서도 에러가 발생하지 않도록 지연 로딩한다
   RedisStore = require('rate-limit-redis');
   const redis = require('redis');
   redisClient = redis.createClient({
@@ -13,9 +14,9 @@ try {
       port: process.env.REDIS_PORT ? Number(process.env.REDIS_PORT) : 6379,
     }
   });
-  redisClient.connect().catch(err => console.warn('Redis connect failed (fallback to memory store):', err.message));
+  redisClient.connect().catch(err => logger.warn('Redis connect failed (fallback to memory store)', { error: err.message }));
 } catch (e) {
-  console.warn('Redis store not available, using in-memory rate limiting');
+  logger.warn('Redis store not available, using in-memory rate limiting');
 }
 
 function buildLimiter({ windowMs, max, message, prefix }) {
@@ -35,19 +36,19 @@ function buildLimiter({ windowMs, max, message, prefix }) {
   return rateLimit(baseConfig);
 }
 
-// Authentication sensitive endpoints
+// 인증 관련 엔드포인트 제한
 const authLimiter = buildLimiter({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  message: 'Too many auth requests. Please try again later.',
+  message: '인증 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
   prefix: 'rl:auth:'
 });
 
-// Playback / control endpoints
+// 재생 제어 관련 엔드포인트 제한
 const playbackLimiter = buildLimiter({
   windowMs: 60 * 1000,
   max: 100,
-  message: 'Too many playback control requests.',
+  message: '재생 제어 요청이 너무 많습니다.',
   prefix: 'rl:playback:'
 });
 

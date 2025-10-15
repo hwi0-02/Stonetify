@@ -1,18 +1,17 @@
-﻿const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+﻿const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const SavedPost = require('./saved_posts');
+const { post: postValidators } = require('../utils/validators');
+const { buildUpdatePayload } = require('../utils/modelUtils');
 
 class Post {
   static async create(postData) {
-    const { user_id, content, playlist_id, type = 'text' } = postData;
-    
+    const payload = postValidators.validatePostCreate(postData);
+    const now = Date.now();
     const post = {
-      user_id,
-      content,
-      playlist_id: playlist_id || null,
-      type,
-      created_at: Date.now(),
-      updated_at: Date.now()
+      ...payload,
+      created_at: now,
+      updated_at: now,
     };
-    
     const postId = await RealtimeDBHelpers.createDocument(COLLECTIONS.POSTS, post);
     return postId;
   }
@@ -34,29 +33,28 @@ class Post {
   }
 
   static async update(id, postData) {
-    const updateData = {
-      ...postData,
-      updated_at: Date.now()
-    };
-    await RealtimeDBHelpers.updateDocument(COLLECTIONS.POSTS, id, updateData);
+    const current = await this.findById(id);
+    if (!current) return null;
+    const sanitized = postValidators.validatePostUpdate(postData);
+    const payload = buildUpdatePayload(current, sanitized);
+    if (!Object.keys(payload).length) {
+      return current;
+    }
+    await RealtimeDBHelpers.updateDocument(COLLECTIONS.POSTS, id, payload);
     return await this.findById(id);
   }
 
   static async delete(id) {
-    console.log('Post.delete 호출됨:', id);
-    
     // 게시물 삭제
     await RealtimeDBHelpers.deleteDocument(COLLECTIONS.POSTS, id);
-    console.log('게시물 삭제 완료');
-    
-    // 관련 좋아요 삭제
-    console.log('게시물 좋아요 삭제 중...');
     const postLikes = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.POST_LIKES, 'post_id', id);
-    console.log('삭제할 좋아요 개수:', postLikes.length);
     for (const like of postLikes) {
       await RealtimeDBHelpers.deleteDocument(COLLECTIONS.POST_LIKES, like.id);
     }
-    console.log('게시물 좋아요 삭제 완료');
+    const savedEntries = await SavedPost.findByPostId(id);
+    for (const entry of savedEntries) {
+      await SavedPost.delete(entry.id);
+    }
   }
 
   // 최신 게시물부터 가져오기 (시간순 정렬)
@@ -70,11 +68,10 @@ class Post {
   // 게시물 검색
   static async searchPosts(query, limit = 10) {
     const allPosts = await this.findAll();
-    
+    const normalized = query.toLowerCase();
     const filteredPosts = allPosts.filter(post => 
-      post.content && post.content.toLowerCase().includes(query.toLowerCase())
+      post.content && post.content.toLowerCase().includes(normalized)
     );
-    
     return filteredPosts.slice(0, limit);
   }
 }

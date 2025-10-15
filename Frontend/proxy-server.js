@@ -1,6 +1,32 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
+
+const normalizeTarget = (url) => {
+  if (!url) {
+    return null;
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed
+    .replace(/\/api\/?$/i, '')
+    .replace(/\/$/, '');
+};
+
+const defaultHost = process.env.TUNNEL_FALLBACK_HOST || process.env.BACKEND_HOST || process.env.EXPO_PUBLIC_LOCAL_IP || 'localhost';
+const defaultPort = process.env.BACKEND_PORT || process.env.EXPO_PUBLIC_BACKEND_PORT || '5000';
+const targetBase = normalizeTarget(
+  process.env.TUNNEL_API_URL ||
+  process.env.EXPO_PUBLIC_TUNNEL_API_URL ||
+  process.env.EXPO_PUBLIC_API_URL
+) || `http://${defaultHost}:${defaultPort}`;
 
 const app = express();
 
@@ -14,13 +40,14 @@ app.use(cors({
 
 // 프록시 설정
 const proxy = createProxyMiddleware({
-  target: 'https://3611c1f6a55b.ngrok-free.app',
+  target: targetBase,
   changeOrigin: true,
   pathRewrite: {
     '^/proxy': '', // /proxy 경로를 제거하고 백엔드로 전달
   },
   onProxyReq: (proxyReq, req, res) => {
-  console.log(`🔄 Proxy: ${req.method} ${req.originalUrl} -> https://3611c1f6a55b.ngrok-free.app${req.originalUrl.replace('/proxy', '')}`);
+    const rewrittenPath = req.originalUrl.replace(/^\/proxy/, '');
+    console.log(`🔄 Proxy: ${req.method} ${req.originalUrl} -> ${targetBase}${rewrittenPath}`);
   },
   onProxyRes: (proxyRes, req, res) => {
     // HTTPS 환경에서도 작동하도록 헤더 설정
@@ -42,14 +69,19 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'CORS Proxy Server is running',
-  target: 'https://3611c1f6a55b.ngrok-free.app'
+    target: targetBase
   });
 });
 
-const PORT = process.env.PROXY_PORT || 3001;
+const toPort = (value, fallback) => {
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
-app.listen(PORT, () => {
-  console.log(`🌐 CORS Proxy Server running on port ${PORT}`);
-  console.log(`📡 Proxying requests to: https://3611c1f6a55b.ngrok-free.app`);
-  console.log(`🔗 Usage: http://localhost:${PORT}/proxy/api/...`);
+const proxyPort = toPort(process.env.PROXY_PORT || process.env.EXPO_PUBLIC_PROXY_PORT, 3001);
+
+app.listen(proxyPort, () => {
+  console.log(`🌐 CORS Proxy Server running on port ${proxyPort}`);
+  console.log(`📡 Proxying requests to: ${targetBase}`);
+  console.log(`🔗 Usage: http://localhost:${proxyPort}/proxy/api/...`);
 });

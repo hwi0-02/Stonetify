@@ -1,19 +1,16 @@
-const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { shareLink: shareLinkValidators } = require('../utils/validators');
+const { buildUpdatePayload } = require('../utils/modelUtils');
 
 class ShareLink {
   static async create(shareLinkData) {
-    const { playlist_id, user_id, share_token, expires_at } = shareLinkData;
-    
+    const payload = shareLinkValidators.validateShareLinkCreate(shareLinkData);
+    const now = Date.now();
     const shareLink = {
-      playlist_id,
-      user_id,
-      share_token,
-      expires_at: expires_at || null,
-      created_at: Date.now(),
-      view_count: 0,
-      is_active: true
+      ...payload,
+      created_at: now,
+      updated_at: now,
     };
-    
     const shareLinkId = await RealtimeDBHelpers.createDocument(COLLECTIONS.SHARE_LINKS, shareLink);
     return shareLinkId;
   }
@@ -23,9 +20,8 @@ class ShareLink {
   }
 
   static async findByToken(token) {
-    const allShareLinks = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.SHARE_LINKS);
-    const match = allShareLinks.find(sl => sl.share_token === token);
-    return match || null;
+    const matches = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.SHARE_LINKS, 'share_token', token);
+    return matches[0] || null;
   }
 
   static async findByPlaylistId(playlistId) {
@@ -45,11 +41,14 @@ class ShareLink {
   }
 
   static async update(id, updateData) {
-    const newData = {
-      ...updateData,
-      updated_at: Date.now()
-    };
-    await RealtimeDBHelpers.updateDocument(COLLECTIONS.SHARE_LINKS, id, newData);
+    const current = await this.findById(id);
+    if (!current) return null;
+    const sanitized = shareLinkValidators.validateShareLinkUpdate(updateData);
+    const payload = buildUpdatePayload(current, sanitized);
+    if (!Object.keys(payload).length) {
+      return current;
+    }
+    await RealtimeDBHelpers.updateDocument(COLLECTIONS.SHARE_LINKS, id, payload);
     return await this.findById(id);
   }
 
@@ -94,15 +93,12 @@ class ShareLink {
   static async cleanupExpiredLinks() {
     const allShareLinks = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.SHARE_LINKS);
     const now = Date.now();
-    
     const expiredLinks = allShareLinks.filter(link => 
       link.expires_at && link.expires_at < now
     );
-    
     for (const link of expiredLinks) {
       await this.delete(link.id);
     }
-    
     return expiredLinks.length;
   }
 

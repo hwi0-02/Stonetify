@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import apiService from '../../services/apiService';
+import { createStatusHandlers } from '../utils/statusHelpers';
 
 const initialState = {
   map: {}, // id or spotify_id => true
@@ -74,12 +75,13 @@ const likedSongsSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
+    const { setPending, setFulfilled, setRejected } = createStatusHandlers();
     builder
       .addCase(fetchLikedSongs.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(fetchLikedSongs.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         // Ensure no duplicates when loading
         const seen = new Set();
         const unique = [];
@@ -101,8 +103,7 @@ const likedSongsSlice = createSlice({
         state.map = m;
       })
       .addCase(fetchLikedSongs.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(toggleLikeSongThunk.pending, (state, action) => {
         // 낙관적 업데이트 - 즉시 상태 변경

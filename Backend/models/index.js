@@ -6,6 +6,7 @@ const PlaylistSongs = require('./playlist_songs');
 const LikedPlaylist = require('./liked_playlists');
 const Post = require('./post');
 const PostLike = require('./post_likes');
+const SavedPost = require('./saved_posts');
 const Follow = require('./follows');
 const ShareLink = require('./share_links');
 const SongLike = require('./song_likes');
@@ -20,9 +21,10 @@ module.exports = {
   LikedPlaylist,
   Post,
   PostLike,
+  SavedPost,
   Follow,
-  ShareLink
-  ,SongLike
-  ,SpotifyToken
-  ,PlaybackHistory
+  ShareLink,
+  SongLike,
+  SpotifyToken,
+  PlaybackHistory,
 };

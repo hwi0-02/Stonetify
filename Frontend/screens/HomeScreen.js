@@ -1,21 +1,25 @@
-import React, { useEffect } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
   ScrollView,
   Platform,
-  Dimensions
+  Dimensions,
+  Share,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
-import { fetchPosts } from '../store/slices/postSlice';
-import { fetchMyPlaylists, fetchLikedPlaylists } from '../store/slices/playlistSlice';
-import PostItem from '../components/home/PostItem';
+import PostCard from '../components/PostCard';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
+import SectionHeader from '../components/common/SectionHeader';
+import EmptyState from '../components/common/EmptyState';
+import { createStyles } from '../utils/ui';
+import useHomeContent from '../hooks/useHomeContent';
+import useNavigationActions from '../navigation/useNavigationActions';
 
 const logoPurple = require('../assets/images/logo_purple.png');
 
@@ -23,11 +27,125 @@ const { width: screenWidth } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 const isMobile = !isWeb && screenWidth < 768;
 
-const HomeScreen = ({ navigation }) => {
-  const dispatch = useDispatch();
-  const { posts = [], status: postStatus } = useSelector((state) => state.post);
-  const { user } = useSelector((state) => state.auth);
-  const { userPlaylists } = useSelector((state) => state.playlist);
+const styles = createStyles(({ colors, spacing, typography, elevation }) => ({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
+  scrollViewContent: {
+    paddingBottom: spacing.xxl + spacing.md,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingLeft: spacing.xs,
+    paddingRight: spacing.lg,
+    paddingTop: isWeb ? spacing.xs : isMobile ? spacing.xl : spacing.lg,
+    paddingBottom: isWeb ? spacing.xs : isMobile ? spacing.sm : spacing.xs,
+    backgroundColor: colors.background,
+  },
+  headerLeft: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+    justifyContent: 'flex-start',
+  },
+  logo: {
+    width: isWeb ? 110 : isMobile ? 120 : 115,
+    height: isWeb ? 100 : isMobile ? 100 : 100,
+    top: isWeb ? 10 : isMobile ? 15 : 8,
+    contentFit: 'contain',
+    marginLeft: -5,
+  },
+  greeting: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: isWeb ? spacing.xs : isMobile ? spacing.md : spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  userName: {
+    ...typography.heading,
+    fontSize: 24,
+    letterSpacing: -0.8,
+  },
+  quickAccessContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  quickAccessButton: {
+    flex: 1,
+    backgroundColor: colors.accent,
+    borderRadius: 24,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    ...elevation.overlay,
+  },
+  quickAccessSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: colors.accent,
+    shadowColor: 'transparent',
+  },
+  quickButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  quickButtonText: {
+    color: '#121212',
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  quickButtonSecondaryText: {
+    color: colors.accent,
+  },
+  feedContainer: {
+    paddingHorizontal: spacing.md,
+    gap: spacing.md,
+  },
+  feedEmptyWrapper: {
+    paddingHorizontal: spacing.md,
+  },
+}));
+
+const HomeScreen = () => {
+  const {
+    user,
+    postStatus,
+    userPlaylists,
+    recommendedPlaylists,
+    forYouPlaylists,
+    refreshing,
+    refresh,
+    popularPosts,
+    likePost,
+    savePost,
+    createShareLink,
+  } = useHomeContent();
+  const {
+    goToPlaylistDetail,
+    goToProfile,
+    goToCreatePlaylist,
+    goToSearch,
+    goToFeed,
+  } = useNavigationActions();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -36,17 +154,29 @@ const HomeScreen = ({ navigation }) => {
     return '좋은 저녁이에요';
   };
 
-  useEffect(() => {
-    dispatch(fetchPosts());
-    dispatch(fetchMyPlaylists());
-    dispatch(fetchLikedPlaylists());
-  }, [dispatch]);
+  const handlePlaylistPress = useCallback((playlist) => {
+    if (playlist?.id) {
+      goToPlaylistDetail(playlist.id);
+    }
+  }, [goToPlaylistDetail]);
 
-  const handlePlaylistPress = (playlist) => {
-    navigation.navigate('PlaylistDetail', { playlistId: playlist.id });
-  };
+  const handlePostShare = useCallback(async (post) => {
+    if (!post?.playlist?.id) {
+      Alert.alert('오류', '공유할 수 없는 플레이리스트입니다.');
+      return;
+    }
 
-  if (postStatus === 'loading' && posts.length === 0) {
+    try {
+      const shareLink = await createShareLink(post.playlist.id);
+      await Share.share({
+        message: `Stonetify에서 "${post.playlist.title}" 플레이리스트를 확인해보세요!\n${shareLink.share_url}`,
+      });
+    } catch (error) {
+      Alert.alert('오류', '공유 링크 생성에 실패했습니다.');
+    }
+  }, [createShareLink]);
+
+  if (postStatus === 'loading' && popularPosts.length === 0) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#1DB954" />
@@ -59,6 +189,14 @@ const HomeScreen = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.scrollViewContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor="#1DB954"
+            colors={['#1DB954']}
+          />
+        }
       >
         {/* 헤더 */}
         <View style={styles.header}>
@@ -75,7 +213,7 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.quickAccessContainer}>
           <TouchableOpacity
             style={styles.quickAccessButton}
-            onPress={() => navigation.navigate('CreatePlaylist')}
+            onPress={goToCreatePlaylist}
           >
             <View style={styles.quickButtonContent}>
               <Ionicons name="add" size={18} color="#121212" />
@@ -85,7 +223,7 @@ const HomeScreen = ({ navigation }) => {
 
           <TouchableOpacity
             style={[styles.quickAccessButton, styles.quickAccessSecondary]}
-            onPress={() => navigation.navigate('Search')}
+            onPress={goToSearch}
           >
             <View style={styles.quickButtonContent}>
               <Ionicons name="musical-notes" size={18} color="#1DB954" />
@@ -105,127 +243,49 @@ const HomeScreen = ({ navigation }) => {
         <HorizontalPlaylist
           title="나의 플레이리스트"
           data={userPlaylists}
-          onItemPress={(item) => handlePlaylistPress(item)}
-          onSeeAll={() => navigation.navigate('Profile')}
+          onItemPress={handlePlaylistPress}
+          onSeeAll={goToProfile}
         />
 
-        {/* 피드 */}
-        <Text style={styles.sectionTitle}>피드</Text>
-        {!Array.isArray(posts) || posts.length === 0 ? (
-          <Text style={styles.emptyText}>아직 공유된 플레이리스트가 없어요.</Text>
-        ) : (
-          posts.map((post) => (
-            <PostItem
-              key={post.id}
-              post={post}
-              onPlaylistPress={() => handlePlaylistPress(post.playlist.id)}
-            />
-          ))
-        )}
+        <HorizontalPlaylist
+          title={`${user?.display_name || '회원'}님을 위한 추천`}
+          data={forYouPlaylists}
+          onItemPress={handlePlaylistPress}
+        />
+
+        <HorizontalPlaylist
+          title="최신 플레이리스트"
+          data={recommendedPlaylists}
+          onItemPress={handlePlaylistPress}
+        />
+
+        <SectionHeader title="피드" actionLabel="이동하기" onPressAction={goToFeed} />
+
+        <View style={styles.feedContainer}>
+          {!Array.isArray(popularPosts) || popularPosts.length === 0 ? (
+            <View style={styles.feedEmptyWrapper}>
+              <EmptyState title="아직 피드가 없어요" description="새로운 음악을 공유하면 이곳에서 확인할 수 있어요" icon="chatbubble-ellipses-outline" />
+            </View>
+          ) : (
+            popularPosts.map((post) => (
+              <PostCard
+                key={post.id}
+                item={post}
+                onPress={() => handlePlaylistPress(post.playlist)}
+                onLikePress={() =>
+                  user ? likePost(post.id) : Alert.alert('로그인이 필요한 기능입니다.')
+                }
+                onSavePress={() =>
+                  user ? savePost(post.id) : Alert.alert('로그인이 필요한 기능입니다.')
+                }
+                onSharePress={() => handlePostShare(post)}
+              />
+            ))
+          )}
+        </View>
       </ScrollView>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#121212'
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#121212'
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingLeft: 8,
-    paddingRight: 20,
-    paddingTop: isWeb ? 5 : isMobile ? 40 : 25,
-    paddingBottom: isWeb ? 5 : isMobile ? 8 : 6,
-    backgroundColor: '#121212'
-  },
-  headerLeft: { flex: 1, justifyContent: 'flex-start', alignItems: 'flex-start' },
-  headerRight: { alignItems: 'flex-end', justifyContent: 'flex-start' },
-  logo: {
-    width: isWeb ? 110 : isMobile ? 120 : 115,
-    height: isWeb ? 100 : isMobile ? 100 : 100,
-    top: isWeb ? 10 : isMobile ? 15 : 8,
-    contentFit: 'contain',
-    marginLeft: -5
-  },
-  greeting: {
-    fontSize: 14,
-    color: '#b3b3b3',
-    fontWeight: '500',
-    marginBottom: isWeb ? 4 : isMobile ? 12 : 8,
-    textTransform: 'uppercase',
-    letterSpacing: 1
-  },
-  userName: {
-    fontSize: 24,
-    color: '#ffffff',
-    fontWeight: '800',
-    letterSpacing: -0.8
-  },
-  quickAccessContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 24,
-    gap: 12
-  },
-  quickAccessButton: {
-    flex: 1,
-    backgroundColor: '#1DB954',
-    borderRadius: 24,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    shadowColor: '#1DB954',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8
-  },
-  quickAccessSecondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#1DB954',
-    shadowColor: 'transparent'
-  },
-  quickButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  quickButtonText: {
-    color: '#121212',
-    fontSize: 13,
-    fontWeight: '700',
-    marginLeft: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5
-  },
-  quickButtonSecondaryText: { color: '#1DB954' },
-  scrollViewContent: { paddingBottom: 100, backgroundColor: '#121212' },
-  sectionTitle: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 16,
-    marginTop: 32,
-    paddingHorizontal: 16,
-    letterSpacing: -0.5
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 48,
-    fontSize: 16,
-    color: '#b3b3b3',
-    paddingHorizontal: 32
-  }
-});
 
 export default HomeScreen;

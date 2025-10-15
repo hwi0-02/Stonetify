@@ -1,47 +1,79 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, Image, View } from 'react-native';
+import PropTypes from 'prop-types';
+import { TouchableOpacity, Text, Image } from 'react-native';
+import { createStyles } from '../../utils/ui';
+import {
+  buttonPrimary,
+  buttonSecondary,
+  pressableHitSlop,
+} from '../../utils/uiComponents';
 
-// 로그인/회원가입 화면에서 사용하는 버튼 컴포넌트
-const AuthButton = ({ title, onPress, style, textStyle, icon }) => {
-  return (
-    <TouchableOpacity style={[styles.button, style]} onPress={onPress}>
-      {icon && <Image source={icon} style={styles.icon} />}
-      <Text style={[styles.text, textStyle]}>{title}</Text>
-    </TouchableOpacity>
-  );
-};
-
-const styles = StyleSheet.create({
+const styles = createStyles(({ typography, spacing, colors }) => ({
   button: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 32,
-    borderRadius: 30,
-    backgroundColor: '#8E44AD',
-    shadowColor: '#8E44AD',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
     minWidth: 200,
+    gap: spacing.sm,
+  },
+  primary: {
+    ...buttonPrimary(),
+  },
+  secondary: {
+    ...buttonSecondary(),
+  },
+  text: {
+    ...typography.subheading,
+    fontSize: 16,
+    letterSpacing: 0.5,
+    color: colors.textPrimary,
+  },
+  textSecondary: {
+    color: colors.accent,
   },
   icon: {
     width: 20,
     height: 20,
-    contentFit: 'contain',
     marginRight: 12,
   },
-  text: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-});
+}));
+
+const AuthButton = ({ title, onPress, style, textStyle, icon, variant }) => {
+  const isSecondary = variant === 'secondary';
+  const buttonStyles = [
+    styles.button,
+    isSecondary ? styles.secondary : styles.primary,
+    style,
+  ];
+  const labelStyles = [
+    styles.text,
+    isSecondary ? styles.textSecondary : null,
+    textStyle,
+  ];
+
+  return (
+    <TouchableOpacity style={buttonStyles} onPress={onPress} activeOpacity={0.85} hitSlop={pressableHitSlop}>
+      {icon ? <Image source={icon} style={styles.icon} /> : null}
+      <Text style={labelStyles}>{title}</Text>
+    </TouchableOpacity>
+  );
+};
+
+AuthButton.propTypes = {
+  title: PropTypes.string.isRequired,
+  onPress: PropTypes.func,
+  style: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
+  textStyle: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
+  icon: PropTypes.oneOfType([PropTypes.number, PropTypes.object]),
+  variant: PropTypes.oneOf(['primary', 'secondary']),
+};
+
+AuthButton.defaultProps = {
+  onPress: undefined,
+  style: undefined,
+  textStyle: undefined,
+  icon: undefined,
+  variant: 'primary',
+};
 
 export default AuthButton;

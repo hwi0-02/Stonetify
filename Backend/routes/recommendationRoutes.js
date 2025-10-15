@@ -7,8 +7,6 @@ const {
 } = require('../controllers/recommendationController');
 const { protect } = require('../middleware/authMiddleware');
 
-// @/api/recommendations/
-
 // 개인화된 추천 플레이리스트
 router.get('/playlists', protect, getRecommendedPlaylists);
 

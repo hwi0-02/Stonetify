@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as apiService from '../../services/apiService';
+import { createStatusHandlers } from '../utils/statusHelpers';
 
 const initialState = {
   searchResults: [],
@@ -136,25 +137,24 @@ const spotifySlice = createSlice({
     }
   },
   extraReducers: (builder) => {
+    const searchStatus = createStatusHandlers();
+    const authStatusHandlers = createStatusHandlers({ statusKey: 'authStatus', errorKey: 'authError' });
     builder
       .addCase(searchTracks.pending, (state) => {
-        state.status = 'loading';
+        searchStatus.setPending(state);
       })
       .addCase(searchTracks.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        searchStatus.setFulfilled(state);
         state.searchResults = action.payload;
       })
       .addCase(searchTracks.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        searchStatus.setRejected(state, action);
       })
       .addCase(exchangeSpotifyCode.pending, (state) => {
-        state.authStatus = 'loading';
-        state.authError = null;
+        authStatusHandlers.setPending(state);
       })
       .addCase(exchangeSpotifyCode.fulfilled, (state, action) => {
-        state.authStatus = 'succeeded';
-        state.authError = null;
+        authStatusHandlers.setFulfilled(state);
         state.accessToken = action.payload.accessToken;
         state.refreshTokenEnc = action.payload.refreshTokenEnc;
   state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000; // renew 60s earlier
@@ -162,8 +162,8 @@ const spotifySlice = createSlice({
         state.requiresReauth = false;
       })
       .addCase(exchangeSpotifyCode.rejected, (state, action) => {
-        state.authStatus = 'failed';
-        state.authError = action.payload || 'Spotify 코드 교환 실패';
+        authStatusHandlers.setRejected(state, action);
+        state.authError = state.authError || 'Spotify 코드 교환 실패';
       })
       .addCase(refreshSpotifyToken.fulfilled, (state, action) => {
         state.accessToken = action.payload.accessToken;

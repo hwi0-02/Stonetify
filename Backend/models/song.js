@@ -1,22 +1,21 @@
-const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { song: songValidators } = require('../utils/validators');
+const { buildUpdatePayload } = require('../utils/modelUtils');
 
 class Song {
   static async create(songData) {
-    const { spotify_id, title, artist, album, album_cover_url, preview_url, duration_ms, external_urls } = songData;
-    
-    const song = {
-      spotify_id,
-      title,
-      artist,
-      album,
-      album_cover_url,
-      preview_url,
-      duration_ms: duration_ms || null,
-      external_urls: external_urls || null,
-      created_at: Date.now()
-    };
-    
-    const songId = await RealtimeDBHelpers.createDocument(COLLECTIONS.SONGS, song);
+    const payload = songValidators.validateSongCreate(songData);
+    const titleLower = payload.title.toLowerCase();
+    const artistLower = payload.artist.toLowerCase();
+    const albumLower = (payload.album || '').toLowerCase();
+    const songId = await RealtimeDBHelpers.createDocument(COLLECTIONS.SONGS, {
+      ...payload,
+      title_lower: titleLower,
+      artist_lower: artistLower,
+      album_lower: albumLower,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    });
     return songId;
   }
 
@@ -25,12 +24,12 @@ class Song {
   }
 
   static async findBySpotifyId(spotifyId) {
-    const songs = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.SONGS, 'spotify_id', spotifyId);
+    const songs = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.SONGS, 'spotify_id', spotifyId?.toLowerCase());
     return songs.length > 0 ? songs[0] : null;
   }
 
   static async findOrCreate(songData) {
-    const { spotify_id } = songData;
+  const { spotify_id } = songData;
     
     // 먼저 기존 곡이 있는지 확인
     let existingSong = await this.findBySpotifyId(spotify_id);
@@ -45,11 +44,24 @@ class Song {
   }
 
   static async update(id, songData) {
-    const updateData = {
-      ...songData,
-      updated_at: Date.now()
-    };
-    await RealtimeDBHelpers.updateDocument(COLLECTIONS.SONGS, id, updateData);
+    const current = await this.findById(id);
+    if (!current) return null;
+    const sanitized = songValidators.validateSongUpdate(songData);
+    if (sanitized.title !== undefined) {
+      sanitized.title_lower = sanitized.title.toLowerCase();
+    }
+    if (sanitized.artist !== undefined) {
+      sanitized.artist_lower = sanitized.artist.toLowerCase();
+    }
+    if (sanitized.album !== undefined) {
+      const albumValue = sanitized.album || '';
+      sanitized.album_lower = albumValue.toLowerCase();
+    }
+    const payload = buildUpdatePayload(current, sanitized);
+    if (!Object.keys(payload).length) {
+      return current;
+    }
+    await RealtimeDBHelpers.updateDocument(COLLECTIONS.SONGS, id, payload);
     return await this.findById(id);
   }
 
@@ -59,16 +71,41 @@ class Song {
 
   // 곡 검색
   static async searchSongs(query, limit = 10) {
-    const allSongs = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.SONGS);
-    
-    // 클라이언트 사이드 필터링
-    const filteredSongs = allSongs.filter(song => 
-      (song.title && song.title.toLowerCase().includes(query.toLowerCase())) ||
-      (song.artist && song.artist.toLowerCase().includes(query.toLowerCase())) ||
-      (song.album && song.album.toLowerCase().includes(query.toLowerCase()))
-    );
-    
-    return filteredSongs.slice(0, limit);
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return [];
+
+    const [titleMatches, artistMatches, albumMatches] = await Promise.all([
+      RealtimeDBHelpers.queryDocumentsByPrefix(COLLECTIONS.SONGS, 'title_lower', normalized, { limit }),
+      RealtimeDBHelpers.queryDocumentsByPrefix(COLLECTIONS.SONGS, 'artist_lower', normalized, { limit }),
+      RealtimeDBHelpers.queryDocumentsByPrefix(COLLECTIONS.SONGS, 'album_lower', normalized, { limit }),
+    ]);
+
+    const merged = [...titleMatches, ...artistMatches, ...albumMatches];
+    const deduped = [];
+    const seen = new Set();
+    for (const song of merged) {
+      if (seen.has(song.id)) continue;
+      seen.add(song.id);
+      deduped.push(song);
+      if (limit && deduped.length >= limit) break;
+    }
+
+      if (!limit || deduped.length < limit) {
+        const remaining = limit ? limit - deduped.length : null;
+        const fallback = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.SONGS);
+        for (const candidate of fallback) {
+          if (seen.has(candidate.id)) continue;
+          const titleMatch = candidate.title?.toLowerCase().includes(normalized);
+          const artistMatch = candidate.artist?.toLowerCase().includes(normalized);
+          const albumMatch = candidate.album?.toLowerCase().includes(normalized);
+          if (!titleMatch && !artistMatch && !albumMatch) continue;
+          deduped.push(candidate);
+          seen.add(candidate.id);
+          if (remaining && deduped.length >= limit) break;
+        }
+      }
+
+      return deduped;
   }
 
   // 특정 플레이리스트의 곡들 조회
@@ -80,14 +117,6 @@ class Song {
       const song = await this.findById(playlistSong.song_id);
       if (song) {
         // Log to verify spotify_id is present
-        if (!song.spotify_id) {
-          console.warn('⚠️ [Song.findByPlaylistId] Song missing spotify_id:', {
-            songId: song.id,
-            title: song.title,
-            allFields: Object.keys(song)
-          });
-        }
-        
         songs.push({
           ...song,
           position: playlistSong.position,

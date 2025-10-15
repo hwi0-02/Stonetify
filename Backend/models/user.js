@@ -1,24 +1,40 @@
-const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
 const bcrypt = require('bcryptjs');
+const { user: userValidators } = require('../utils/validators');
+const { ApiError } = require('../utils/errors');
+const { logger } = require('../utils/logger');
+
+const BCRYPT_HASH_REGEX = /^\$2[aby]\$\d{2}\$/;
+
+const ensureHashedPassword = async (password) => {
+  if (!password) return password;
+  if (BCRYPT_HASH_REGEX.test(password)) {
+    return password;
+  }
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(password, salt);
+};
 
 class User {
   static async create(userData) {
-    const { display_name, email, password } = userData;
-    
-    // 비밀번호 해싱
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-    
+    const payload = userValidators.validateUserCreate(userData);
+    const hashedPassword = await ensureHashedPassword(payload.password);
+
+    const displayNameLower = payload.display_name.toLowerCase();
+    const emailLower = payload.email.toLowerCase();
     const user = {
-      display_name,
-      email,
+      display_name: payload.display_name,
+      display_name_lower: displayNameLower,
+      email: payload.email,
+      email_lower: emailLower,
       password: hashedPassword,
+      profile_image_url: null,
       profile_image: null,
       bio: '',
       created_at: Date.now(),
       updated_at: Date.now()
     };
-    
+
     const userId = await RealtimeDBHelpers.createDocument(COLLECTIONS.USERS, user);
     return userId;
   }
@@ -28,32 +44,48 @@ class User {
   }
 
   static async findByEmail(email) {
-    console.log('🔍 findByEmail 호출됨:', email);
-    const allUsers = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.USERS);
-    console.log('📋 모든 사용자 수:', allUsers.length);
-    
-    const user = allUsers.find(user => user.email === email);
-    if (user) {
-      console.log('✅ 사용자 찾음:', { id: user.id, email: user.email, hasPassword: !!user.password });
-    } else {
-      console.log('❌ 사용자를 찾을 수 없음:', email);
-    }
-    
-    return user || null;
+    if (!email) return null;
+    const normalizedEmail = email.toLowerCase();
+    const users = await RealtimeDBHelpers.queryDocuments(COLLECTIONS.USERS, 'email_lower', normalizedEmail);
+    return users[0] || null;
   }
 
   static async update(id, userData) {
-    const updateData = {
-      ...userData,
-      updated_at: Date.now()
-    };
-    
-    // 비밀번호가 포함된 경우 해싱
-    if (updateData.password) {
-      const salt = await bcrypt.genSalt(10);
-      updateData.password = await bcrypt.hash(updateData.password, salt);
+    const sanitized = userValidators.validateUserUpdate(userData);
+    const currentUser = await this.findById(id);
+    if (!currentUser) {
+      throw ApiError.notFound('사용자를 찾을 수 없습니다.');
     }
-    
+
+    const updateData = {};
+
+    if (sanitized.email && sanitized.email !== currentUser.email) {
+  updateData.email = sanitized.email;
+  updateData.email_lower = sanitized.email.toLowerCase();
+    }
+
+    if (sanitized.display_name && sanitized.display_name !== currentUser.display_name) {
+      updateData.display_name = sanitized.display_name;
+      updateData.display_name_lower = sanitized.display_name.toLowerCase();
+    }
+
+    if (sanitized.profile_image_url !== undefined && sanitized.profile_image_url !== currentUser.profile_image_url) {
+      updateData.profile_image_url = sanitized.profile_image_url;
+    }
+
+    if (sanitized.password) {
+      const hashed = await ensureHashedPassword(sanitized.password);
+      if (hashed !== currentUser.password) {
+        updateData.password = hashed;
+      }
+    }
+
+    if (!Object.keys(updateData).length) {
+      return currentUser;
+    }
+
+    updateData.updated_at = Date.now();
+
     await RealtimeDBHelpers.updateDocument(COLLECTIONS.USERS, id, updateData);
     return await this.findById(id);
   }
@@ -63,38 +95,52 @@ class User {
   }
 
   static async validatePassword(user, password) {
-    console.log('🔍 validatePassword 호출됨');
-    console.log('user 객체:', user);
-    console.log('입력된 비밀번호:', password);
-    console.log('사용자 해시된 비밀번호:', user.password);
-    
     if (!user.password) {
-      console.log('❌ 사용자의 비밀번호가 없음');
       return false;
     }
-    
     try {
-      const result = await bcrypt.compare(password, user.password);
-      console.log('bcrypt 비교 결과:', result);
-      return result;
+      return await bcrypt.compare(password, user.password);
     } catch (error) {
-      console.error('❌ bcrypt 비교 중 오류:', error);
+      logger.error('Password comparison failed', { error });
       return false;
     }
   }
 
   // 사용자 검색
   static async searchUsers(query, limit = 10) {
-    const allUsers = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.USERS);
-    
-    // 클라이언트 사이드 검색 (display_name과 email)
-    const filteredUsers = allUsers.filter(user => {
-      const nameMatch = user.display_name && user.display_name.toLowerCase().includes(query.toLowerCase());
-      const emailMatch = user.email && user.email.toLowerCase().includes(query.toLowerCase());
-      return nameMatch || emailMatch;
-    });
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return [];
 
-    return filteredUsers.slice(0, limit);
+    const [byName, byEmail] = await Promise.all([
+      RealtimeDBHelpers.queryDocumentsByPrefix(COLLECTIONS.USERS, 'display_name_lower', normalized, { limit }),
+      RealtimeDBHelpers.queryDocumentsByPrefix(COLLECTIONS.USERS, 'email_lower', normalized, { limit }),
+    ]);
+
+    const merged = [...byName, ...byEmail];
+    const deduped = [];
+    const seen = new Set();
+    for (const user of merged) {
+      if (seen.has(user.id)) continue;
+      seen.add(user.id);
+      deduped.push(user);
+      if (limit && deduped.length >= limit) break;
+    }
+
+    if (!limit || deduped.length < limit) {
+      const remaining = limit ? limit - deduped.length : null;
+      const fallback = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.USERS);
+      for (const candidate of fallback) {
+        if (seen.has(candidate.id)) continue;
+        const nameMatch = candidate.display_name?.toLowerCase().includes(normalized);
+        const emailMatch = candidate.email?.toLowerCase().includes(normalized);
+        if (!nameMatch && !emailMatch) continue;
+        deduped.push(candidate);
+        seen.add(candidate.id);
+        if (remaining && deduped.length >= limit) break;
+      }
+    }
+
+    return deduped;
   }
 
   // 모든 사용자 조회 (관리자용)

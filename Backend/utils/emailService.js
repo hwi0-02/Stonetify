@@ -1,7 +1,8 @@
 const nodemailer = require('nodemailer');
+const { logger } = require('./logger');
 
-// Create reusable transporter using Gmail SMTP
-// Make sure to enable 2FA and create an App Password for the Gmail account
+// Gmail SMTP를 사용해 재사용 가능한 트랜스포터를 생성한다
+// Gmail 계정에서 2단계 인증을 활성화하고 앱 비밀번호를 발급해야 한다
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -10,11 +11,11 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-transporter.verify(function(error, success) {
+transporter.verify((error) => {
   if (error) {
-    console.error('❌ SMTP 연결 실패:', error.message);
+    logger.error('SMTP connection failed', { error: error.message });
   } else {
-    console.log('✉️  Gmail SMTP 서버 연결 성공. 이메일 전송 준비 완료.');
+    logger.info('SMTP connection established');
   }
 });
 
@@ -39,7 +40,7 @@ async function sendEmail({ to, subject, text, html }) {
   };
 
   const info = await transporter.sendMail(mailOptions);
-  console.log('📧 이메일 전송 완료:', info.messageId);
+  logger.debug('Email sent', { messageId: info.messageId, to });
 }
 
 /**

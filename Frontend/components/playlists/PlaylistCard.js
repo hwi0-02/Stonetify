@@ -1,18 +1,112 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import PropTypes from 'prop-types';
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import placeholderAlbum from '../../assets/images/placeholder_album.png';
-import { useDispatch, useSelector } from 'react-redux';
+import { colors as palette, createStyles } from '../../utils/ui';
+import {
+  card as cardStyle,
+  iconButton as iconButtonStyle,
+  textVariants,
+  pressableHitSlop,
+} from '../../utils/uiComponents';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { toggleLikePlaylist, deletePlaylist } from '../../store/slices/playlistSlice';
 import ShareModal from './ShareModal';
 
-// 플레이리스트 썸네일 (2x2 이미지 격자)
+const styles = createStyles(({ colors, spacing, radii, typography, elevation }) => ({
+  cardContainer: {
+    ...cardStyle({ padding: spacing.md, interactive: true }),
+    width: 180,
+    gap: spacing.sm,
+  },
+  imageContainer: {
+    position: 'relative',
+    marginBottom: spacing.md,
+  },
+  thumbnailGrid: {
+    width: '100%',
+    height: 140,
+    borderRadius: radii.md,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted,
+  },
+  gridRow: {
+    flexDirection: 'row',
+    flex: 1,
+  },
+  gridImage: {
+    flex: 1,
+    height: '100%',
+    backgroundColor: colors.muted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.shadow,
+  },
+  thumbnailHeartButton: {
+    position: 'absolute',
+    bottom: spacing.sm,
+    left: spacing.sm,
+    ...iconButtonStyle({ size: 36 }),
+    backgroundColor: colors.overlay,
+  },
+  playButton: {
+    position: 'absolute',
+    bottom: spacing.sm,
+    right: spacing.sm,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...elevation.overlay,
+  },
+  infoContainer: {
+    gap: spacing.xs,
+  },
+  title: {
+    ...typography.subheading,
+    fontSize: 16,
+  },
+  description: {
+    ...textVariants.subtitle,
+    fontSize: 13,
+  },
+  creator: {
+    ...textVariants.meta,
+    textTransform: 'uppercase',
+  },
+  actionButtons: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  actionButton: {
+    ...iconButtonStyle({ size: 36 }),
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  deleteButton: {
+    borderColor: colors.danger,
+  },
+  deleteIcon: {
+    color: colors.danger,
+  },
+}));
+
 const PlaylistThumbnail = ({ coverImages, isLiked, onLikePress }) => {
-  const imageSlots = Array(4).fill(null).map((_, index) => {
-    const url = coverImages[index];
-    return url ? { uri: url } : placeholderAlbum;
-  });
+  const imageSlots = useMemo(() => (
+    Array(4)
+      .fill(null)
+      .map((_, index) => {
+        const url = coverImages[index];
+        return url ? { uri: url } : placeholderAlbum;
+      })
+  ), [coverImages]);
 
   return (
     <View style={styles.thumbnailGrid}>
@@ -24,26 +118,40 @@ const PlaylistThumbnail = ({ coverImages, isLiked, onLikePress }) => {
         <Image source={imageSlots[2]} style={styles.gridImage} />
         <Image source={imageSlots[3]} style={styles.gridImage} />
       </View>
-      <TouchableOpacity style={styles.thumbnailHeartButton} onPress={onLikePress}>
-        <Ionicons 
-          name={isLiked ? "heart" : "heart-outline"} 
-          size={20} 
-          color={isLiked ? "#1DB954" : "#ffffff"} 
+      <TouchableOpacity
+        style={styles.thumbnailHeartButton}
+        onPress={onLikePress}
+        hitSlop={pressableHitSlop}
+      >
+        <Ionicons
+          name={isLiked ? 'heart' : 'heart-outline'}
+          size={20}
+          color={isLiked ? palette.accent : '#ffffff'}
         />
       </TouchableOpacity>
     </View>
   );
 };
 
-// 플레이리스트 카드 컴포넌트
-const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
-  const dispatch = useDispatch();
-  const { user } = useSelector((state) => state.auth);
-  const { likedPlaylists } = useSelector((state) => state.playlist);
+PlaylistThumbnail.propTypes = {
+  coverImages: PropTypes.arrayOf(PropTypes.string).isRequired,
+  isLiked: PropTypes.bool,
+  onLikePress: PropTypes.func.isRequired,
+};
+
+PlaylistThumbnail.defaultProps = {
+  isLiked: false,
+};
+
+const PlaylistCard = ({ playlist, onPress, showActions, coverOnly }) => {
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
+  const likedPlaylists = useAppSelector((state) => state.playlist.likedPlaylists);
   const [shareModalVisible, setShareModalVisible] = useState(false);
+
   const coverImages = playlist.cover_images || [];
-  
-  const isLiked = likedPlaylists.some(p => p.id === playlist.id);
+  const isLiked = likedPlaylists.some((p) => p.id === playlist.id);
+  const isOwner = user && playlist.user_id === user.id;
 
   const handleLike = async () => {
     try {
@@ -53,11 +161,7 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
     }
   };
 
-  const handleShare = () => {
-    setShareModalVisible(true);
-  };
-
-  const handleDelete = async () => {
+  const handleDelete = () => {
     Alert.alert(
       '플레이리스트 삭제',
       `"${playlist.title}"을(를) 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`,
@@ -69,169 +173,95 @@ const PlaylistCard = ({ playlist, onPress, showActions = true }) => {
           onPress: async () => {
             try {
               await dispatch(deletePlaylist(playlist.id)).unwrap();
-            } catch (e) {
-              Alert.alert('오류', e || '삭제 중 문제가 발생했습니다.');
+            } catch (error) {
+              Alert.alert('오류', error?.message || '삭제 중 문제가 발생했습니다.');
             }
-          }
-        }
+          },
+        },
       ],
-      { cancelable: true }
+      { cancelable: true },
     );
   };
 
   return (
-    <TouchableOpacity style={styles.cardContainer} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={styles.cardContainer}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
       <View style={styles.imageContainer}>
-        <PlaylistThumbnail 
-          coverImages={coverImages} 
-          isLiked={isLiked}
-          onLikePress={handleLike}
-        />
+        <PlaylistThumbnail coverImages={coverImages} isLiked={isLiked} onLikePress={handleLike} />
         <View style={styles.playButton}>
-          <Ionicons name="play" size={20} color="#121212" />
+          <Ionicons name="play" size={20} color={palette.background} />
         </View>
-        {showActions && (
+        {showActions && !coverOnly ? (
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-              <Ionicons name="share-outline" size={20} color="#ffffff" />
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => setShareModalVisible(true)}
+              hitSlop={pressableHitSlop}
+            >
+              <Ionicons name="share-outline" size={20} color={palette.textPrimary} />
             </TouchableOpacity>
-            {user && playlist.user_id === user.id && (
-              <TouchableOpacity style={[styles.actionButton, { borderColor: '#ff4444' }]} onPress={handleDelete}>
-                <Ionicons name="trash-outline" size={20} color="#ff4444" />
+            {isOwner ? (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.deleteButton]}
+                onPress={handleDelete}
+                hitSlop={pressableHitSlop}
+              >
+                <Ionicons name="trash-outline" size={20} style={styles.deleteIcon} />
               </TouchableOpacity>
-            )}
+            ) : null}
           </View>
-        )}
-      </View>
-      <View style={styles.infoContainer}>
-        <Text style={styles.title} numberOfLines={2}>{playlist.title}</Text>
-        {playlist.description ? (
-          <Text style={styles.description} numberOfLines={2}>{playlist.description}</Text>
         ) : null}
-        {playlist.user?.display_name && (
-          <Text style={styles.creator}>By {playlist.user.display_name}</Text>
-        )}
       </View>
-      
-      <ShareModal 
-        visible={shareModalVisible}
-        onClose={() => setShareModalVisible(false)}
-        playlist={playlist}
-      />
+      {!coverOnly ? (
+        <View style={styles.infoContainer}>
+          <Text style={styles.title} numberOfLines={2}>
+            {playlist.title || '제목 없는 플레이리스트'}
+          </Text>
+          {playlist.description ? (
+            <Text style={styles.description} numberOfLines={2}>
+              {playlist.description}
+            </Text>
+          ) : null}
+          {playlist.user?.display_name ? (
+            <Text style={styles.creator}>By {playlist.user.display_name}</Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      {!coverOnly ? (
+        <ShareModal
+          visible={shareModalVisible}
+          onClose={() => setShareModalVisible(false)}
+          playlist={playlist}
+        />
+      ) : null}
     </TouchableOpacity>
   );
 };
 
-const styles = StyleSheet.create({
-  cardContainer: {
-    width: 170,
-    marginRight: 16,
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 6,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 12,
-    transform: [{ scale: 1 }],
-  },
-  imageContainer: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  thumbnailGrid: {
-    width: '100%',
-    height: 138,
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#282828',
-  },
-  gridRow: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  gridImage: {
-    flex: 1,
-    height: '100%',
-    backgroundColor: '#282828',
-    borderWidth: 0.5,
-    borderColor: '#1a1a1a',
-  },
-  playButton: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1DB954',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    opacity: 0.9,
-  },
-  infoContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
-    lineHeight: 20,
-    letterSpacing: -0.2,
-  },
-  description: {
-    fontSize: 12,
-    color: '#a7a7a7',
-    marginBottom: 6,
-    lineHeight: 16,
-    fontWeight: '500',
-  },
-  creator: {
-    fontSize: 11,
-    color: '#6a6a6a',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  actionButtons: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  thumbnailHeartButton: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 16,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-});
+PlaylistCard.propTypes = {
+  playlist: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    title: PropTypes.string,
+    description: PropTypes.string,
+    cover_images: PropTypes.arrayOf(PropTypes.string),
+    user_id: PropTypes.string,
+    user: PropTypes.shape({
+      display_name: PropTypes.string,
+    }),
+  }).isRequired,
+  onPress: PropTypes.func,
+  showActions: PropTypes.bool,
+  coverOnly: PropTypes.bool,
+};
+
+PlaylistCard.defaultProps = {
+  onPress: undefined,
+  showActions: true,
+  coverOnly: false,
+};
 
 export default PlaylistCard;

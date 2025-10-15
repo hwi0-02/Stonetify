@@ -1,18 +1,38 @@
 import React, { useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, ActivityIndicator, BackHandler } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
+import { View, Text, Image, TouchableOpacity, Dimensions, ActivityIndicator, BackHandler } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { pauseTrack, resumeTrack, stopTrack, nextTrack, previousTrack, toggleRepeat, toggleShuffle, setSeekInProgress, setPosition, setPlayerScreenVisible } from '../store/slices/playerSlice';
 import { useFocusEffect } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
+import {
+  pauseTrack,
+  resumeTrack,
+  nextTrack,
+  previousTrack,
+  toggleRepeat,
+  toggleShuffle,
+  setSeekInProgress,
+  setPosition,
+  setPlayerScreenVisible,
+} from '../store/slices/playerSlice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { colors as palette, createStyles } from '../utils/ui';
+import { textVariants, pressableHitSlop } from '../utils/uiComponents';
 
 const { width } = Dimensions.get('window');
 const placeholderAlbum = require('../assets/images/placeholder_album.png');
 
 const PlayerScreen = ({ navigation }) => {
-  const dispatch = useDispatch();
-  const { currentTrack, isPlaying, status, position, duration, repeatMode, isShuffle, seekInProgress } = useSelector((state) => state.player);
+  const dispatch = useAppDispatch();
+  const {
+    currentTrack,
+    isPlaying,
+    status,
+    position,
+    duration,
+    repeatMode,
+    isShuffle,
+  } = useAppSelector((state) => state.player);
 
   useEffect(() => {
     // If the screen is opened without a track, or the track is stopped elsewhere,
@@ -86,9 +106,13 @@ const PlayerScreen = ({ navigation }) => {
   }
 
   return (
-    <LinearGradient colors={['#4c1e6e', '#121212']} style={styles.container}>
-      <TouchableOpacity onPress={handleClose} style={styles.downButton}>
-        <Ionicons name="chevron-down" size={32} color="white" />
+    <LinearGradient colors={[palette.accentSecondary, palette.background]} style={styles.container}>
+      <TouchableOpacity
+        onPress={handleClose}
+        style={styles.downButton}
+        hitSlop={pressableHitSlop}
+      >
+        <Ionicons name="chevron-down" size={28} color={palette.textPrimary} />
       </TouchableOpacity>
       
       <View style={styles.content}>
@@ -98,7 +122,7 @@ const PlayerScreen = ({ navigation }) => {
                 style={styles.albumArt} 
             />
             {status === 'loading' && (
-                <ActivityIndicator style={styles.loadingIndicator} size="large" color="#fff" />
+                <ActivityIndicator style={styles.loadingIndicator} size="large" color={palette.textPrimary} />
             )}
         </View>
 
@@ -109,13 +133,13 @@ const PlayerScreen = ({ navigation }) => {
 
         <View style={styles.progressSection}>
           <Slider
-            style={{ width: '100%', height: 40 }}
+            style={styles.slider}
             minimumValue={0}
             maximumValue={duration || 0}
             value={position}
-            minimumTrackTintColor="#fff"
-            maximumTrackTintColor="#555"
-            thumbTintColor="#fff"
+            minimumTrackTintColor={palette.textPrimary}
+            maximumTrackTintColor={palette.textMuted}
+            thumbTintColor={palette.textPrimary}
             onSlidingStart={onSlidingStart}
             onSlidingComplete={onSlidingComplete}
             disabled={!duration}
@@ -127,29 +151,33 @@ const PlayerScreen = ({ navigation }) => {
         </View>
 
         <View style={styles.controlsContainer}>
-          <TouchableOpacity onPress={handleShuffle} style={styles.smallBtn}>
-            <Ionicons name="shuffle" size={26} color={isShuffle ? '#1DB954' : '#fff'} />
+          <TouchableOpacity onPress={handleShuffle} style={styles.smallBtn} hitSlop={pressableHitSlop}>
+            <Ionicons name="shuffle" size={24} color={isShuffle ? palette.accent : palette.textPrimary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handlePrev} style={styles.smallBtn}>
-            <Ionicons name="play-skip-back" size={40} color="#fff" />
+          <TouchableOpacity onPress={handlePrev} style={styles.smallBtn} hitSlop={pressableHitSlop}>
+            <Ionicons name="play-skip-back" size={38} color={palette.textPrimary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handlePlayPause} disabled={status === 'loading'}>
+          <TouchableOpacity onPress={handlePlayPause} disabled={status === 'loading'} hitSlop={pressableHitSlop}>
             <Ionicons
               name={isPlaying ? 'pause-circle' : 'play-circle'}
               size={88}
-              color={status === 'loading' ? '#555' : '#fff'}
+              color={status === 'loading' ? palette.textMuted : palette.textPrimary}
             />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleNext} style={styles.smallBtn}>
-            <Ionicons name="play-skip-forward" size={40} color="#fff" />
+          <TouchableOpacity onPress={handleNext} style={styles.smallBtn} hitSlop={pressableHitSlop}>
+            <Ionicons name="play-skip-forward" size={38} color={palette.textPrimary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleRepeat} style={styles.smallBtn}>
+          <TouchableOpacity onPress={handleRepeat} style={styles.smallBtn} hitSlop={pressableHitSlop}>
             <Ionicons
               name={repeatMode === 'track' ? 'repeat' : repeatMode === 'queue' ? 'repeat' : 'repeat'}
               size={26}
-              color={repeatMode !== 'off' ? '#1DB954' : '#fff'}
+              color={repeatMode !== 'off' ? palette.accent : palette.textPrimary}
             />
-            {repeatMode === 'track' && <View style={styles.repeatOneBadge}><Text style={styles.repeatOneText}>1</Text></View>}
+            {repeatMode === 'track' && (
+              <View style={styles.repeatOneBadge}>
+                <Text style={styles.repeatOneText}>1</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -157,63 +185,94 @@ const PlayerScreen = ({ navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createStyles(({ colors, spacing, typography, radii }) => ({
   container: {
     flex: 1,
   },
   downButton: {
     position: 'absolute',
-    top: 50,
-    left: 20,
+    top: spacing.xxl,
+    left: spacing.lg,
     zIndex: 1,
+    padding: spacing.xs,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.lg,
   },
   albumArtContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: spacing.lg,
   },
   albumArt: {
     width: width * 0.8,
     height: width * 0.8,
-    borderRadius: 12,
-    marginBottom: 60,
+    borderRadius: radii.lg,
+    marginBottom: spacing.xl,
+    backgroundColor: colors.surfaceMuted,
   },
   loadingIndicator: {
     position: 'absolute',
   },
   songDetails: {
     alignItems: 'center',
-    marginBottom: 50,
+    gap: spacing.xs,
   },
   title: {
+    ...typography.heading,
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
     textAlign: 'center',
   },
   artist: {
-    fontSize: 18,
-    color: '#b3b3b3',
-    marginTop: 8,
+    ...textVariants.subtitle,
+    fontSize: 16,
+  },
+  progressSection: {
+    width: '100%',
+    gap: spacing.xs,
+  },
+  slider: {
+    width: '100%',
+    height: 36,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: -8,
+  },
+  time: {
+    ...textVariants.meta,
   },
   controlsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     width: '100%',
-    marginTop: 20,
+    gap: spacing.lg,
+    marginTop: spacing.md,
   },
-  progressSection: { width: '100%', marginBottom: 20 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -8 },
-  time: { color: '#bbb', fontSize: 12 },
-  smallBtn: { paddingHorizontal: 10, paddingVertical: 10, position: 'relative' },
-  repeatOneBadge: { position: 'absolute', top: 4, right: 4, backgroundColor: '#1DB954', borderRadius: 8, paddingHorizontal: 4 },
-  repeatOneText: { color: '#000', fontSize: 10, fontWeight: '700' },
-});
+  smallBtn: {
+    padding: spacing.sm,
+    position: 'relative',
+  },
+  repeatOneBadge: {
+    position: 'absolute',
+    top: spacing.xxs,
+    right: spacing.xxs,
+    backgroundColor: colors.accent,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.xxs,
+    paddingVertical: 2,
+  },
+  repeatOneText: {
+    color: colors.background,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+}));
 
 export default PlayerScreen;

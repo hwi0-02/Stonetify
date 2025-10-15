@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { logger } = require('../utils/logger');
 
 // Firebase 서비스 계정 정보 (환경변수에서 가져오기)
 const serviceAccount = {
@@ -15,14 +16,14 @@ const serviceAccount = {
   universe_domain: 'googleapis.com'
 };
 
-// Firebase Admin 초기??
+// Firebase Admin 초기화 가능 여부
 let initOk = true;
 if (!serviceAccount.project_id || typeof serviceAccount.project_id !== 'string') {
-  console.warn('[Firebase] Invalid or missing FIREBASE_PROJECT_ID. Firebase Admin will not be initialized.');
+  logger.warn('Invalid or missing FIREBASE_PROJECT_ID. Firebase Admin will not be initialized.');
   initOk = false;
 }
 if (!serviceAccount.private_key || !serviceAccount.client_email) {
-  console.warn('[Firebase] Missing private key or client email.');
+  logger.warn('Firebase private key or client email missing.');
   initOk = false;
 }
 
@@ -32,15 +33,15 @@ if (initOk && !admin.apps.length) {
       credential: admin.credential.cert(serviceAccount),
       databaseURL: process.env.FIREBASE_DATABASE_URL
     });
-    console.log('[Firebase] Admin initialized:', serviceAccount.project_id);
+    logger.info('Firebase admin initialized', { projectId: serviceAccount.project_id });
   } catch (e) {
-    console.warn('[Firebase] Initialization failed:', e.message);
+    logger.error('Firebase initialization failed', e);
     initOk = false;
   }
 }
 
 if (!initOk) {
-  console.warn('[Firebase] Falling back to in-memory data store (tokens will reset on restart).');
+  logger.warn('Firebase not initialized. Falling back to in-memory data store (tokens reset on restart).');
 }
 
 
@@ -56,6 +57,7 @@ const COLLECTIONS = {
   SONG_LIKES: 'song_likes',
   POSTS: 'posts',
   POST_LIKES: 'post_likes',
+  SAVED_POSTS: 'saved_posts',
   FOLLOWS: 'follows',
   RECENT_VIEWS: 'recent_views',
   RECOMMENDATIONS: 'recommendations',
@@ -127,6 +129,33 @@ class RealtimeDBHelpers {
     return documents;
   }
 
+  static async queryDocumentsByPrefix(collection, field, prefix, options = {}) {
+    if (!prefix) return [];
+    let query = db
+      .ref(collection)
+      .orderByChild(field)
+      .startAt(prefix)
+      .endAt(`${prefix}\uf8ff`);
+
+    if (options.limit && Number.isFinite(options.limit)) {
+      query = query.limitToFirst(options.limit);
+    }
+
+    const snapshot = await query.once('value');
+    if (!snapshot.exists()) return [];
+
+    const data = snapshot.val();
+    const documents = [];
+
+    for (const [id, document] of Object.entries(data)) {
+      if (document !== null) {
+        documents.push({ id, ...document });
+      }
+    }
+
+    return documents;
+  }
+
   // 문서 정렬 조회
   static async getDocumentsSorted(collection, field, order = 'asc', limit = null) {
     let query = db.ref(collection).orderByChild(field);
@@ -185,5 +214,5 @@ module.exports = {
   admin,
   COLLECTIONS,
   RealtimeDBHelpers,
-   isFirebaseReady: initOk
+  isFirebaseReady: initOk,
 };

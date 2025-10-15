@@ -1,41 +1,20 @@
 const express = require('express');
 const path = require('path');
-// Explicitly load .env from Backend directory (when starting from repo root)
+// 저장소 루트에서 실행할 때를 대비해 Backend 디렉터리의 .env를 명시적으로 불러온다
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-// Sentry (optional – will be no-op if DSN not provided)
-let Sentry = null;
-try {
-  Sentry = require('@sentry/node');
-  if (process.env.SENTRY_DSN) {
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      tracesSampleRate: 0.1,
-      environment: process.env.NODE_ENV || 'development'
-    });
-  }
-} catch (e) {
-  console.log('Sentry not installed (backend), skipping init');
-}
 const cors = require('cors');
 const https = require('https');
 const fs = require('fs');
-// (path already imported above)
 const { errorHandler } = require('./middleware/errorMiddleware');
-// Firebase 초기화 (with basic env validation before require to provide clearer errors)
-const requiredFirebaseVars = [
-  'FIREBASE_PROJECT_ID',
-  'FIREBASE_PRIVATE_KEY_ID',
-  'FIREBASE_PRIVATE_KEY',
-  'FIREBASE_CLIENT_EMAIL',
-  'FIREBASE_CLIENT_ID',
-  'FIREBASE_CLIENT_X509_CERT_URL',
-  'FIREBASE_DATABASE_URL'
-];
-const missingFirebase = requiredFirebaseVars.filter(k => !process.env[k]);
-if (missingFirebase.length) {
-  console.warn('[Firebase] Missing env vars:', missingFirebase.join(', '));
-}
+const { logger, requestLogger, getSentry } = require('./utils/logger');
+const { validateEnvironment } = require('./utils/env');
+const { successResponse } = require('./utils/responses');
 const { db } = require('./config/firebase');
+
+const envReport = validateEnvironment();
+if (envReport.firebase.length + envReport.general.length > 0) {
+  logger.warn('Environment variables missing', envReport);
+}
 
 const app = express();
 app.set('trust proxy', 1);
@@ -64,24 +43,25 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
-// Sentry request handler (if initialized)
-if (Sentry && Sentry.getCurrentHub().getClient()) {
-  app.use(Sentry.Handlers.requestHandler());
+const sentry = getSentry();
+if (sentry && sentry.getCurrentHub().getClient()) {
+  app.use(sentry.Handlers.requestHandler());
 }
 
 // 미들웨어 설정
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false }));
+app.use(requestLogger);
 
-// API 라우트 설정
+// API 라우트 매핑
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/playlists', require('./routes/playlistRoutes'));
 app.use('/api/posts', require('./routes/postRoutes'));
 app.use('/api/spotify', require('./routes/spotifyRoutes'));
 app.use('/api/recommendations', require('./routes/recommendationRoutes'));
 
-// Spotify OAuth redirect helper (PKCE bridge for Expo / web auth flows)
+// Expo 및 웹 인증 흐름을 위한 Spotify OAuth 리디렉션 페이지
 app.get('/spotify-callback', (req, res) => {
   const fallbackUri = process.env.SPOTIFY_APP_REDIRECT || 'stonetify://spotify-callback';
   const fallbackJson = JSON.stringify(fallbackUri);
@@ -145,17 +125,17 @@ app.get('/spotify-callback', (req, res) => {
         }
       }
 
-      var fallback = ${fallbackJson}; // e.g., 'stonetify://spotify-callback'
+  var fallback = ${fallbackJson}; // 예시: 'stonetify://spotify-callback'
       var schemeUrl = (fallback && fallback.toLowerCase() !== 'none') ? buildUrl(fallback) : null;
 
-      // Android intent fallback for cases where custom scheme is blocked
+  // 커스텀 스킴이 차단된 경우를 대비한 Android 인텐트 URL
       var androidIntentUrl = null;
       try {
         var pkg = ua.includes('expo') ? 'host.exp.exponent' : 'com.yourcompany.stonetify';
         androidIntentUrl = 'intent://spotify-callback' + (payload ? ('?' + payload) : '') + '#Intent;scheme=stonetify;package=' + pkg + ';end';
       } catch (_) {}
 
-      // Wire up the visible button so user can manually trigger
+  // 사용자가 수동으로 앱을 여는 버튼 연결
       var btn = document.getElementById('open-app');
       if (btn) {
         var manualTarget = schemeUrl || androidIntentUrl || fallback || '#';
@@ -165,7 +145,7 @@ app.get('/spotify-callback', (req, res) => {
         });
       }
 
-      // Try programmatic deep link shortly after load
+  // 페이지 로드 직후 자동으로 딥링크를 시도
       setTimeout(function() {
         try {
           if (schemeUrl) {
@@ -178,7 +158,7 @@ app.get('/spotify-callback', (req, res) => {
         }
       }, 100);
 
-      // Attempt to close if we were a popup (may be blocked if not script-opened)
+      // 팝업으로 열렸을 경우 창 닫기를 시도 (차단될 수 있음)
       setTimeout(function () { try { window.close(); } catch (_) {} }, 1500);
     })();
   </script>
@@ -187,17 +167,19 @@ app.get('/spotify-callback', (req, res) => {
   res.status(200).type('html').send(html);
 });
 
-// Firebase 연결 확인
-console.log('🔥 Firebase Realtime Database 연결됨');
+// Firebase 연결 로그
+logger.info('Firebase Realtime Database ready', { isReady: !!db });
 
-// Health check
+// 헬스 체크 엔드포인트
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', ts: Date.now() });
+  successResponse(res, {
+    data: { status: 'ok', ts: Date.now() },
+  });
 });
 
-// Sentry error handler first
-if (Sentry && Sentry.getCurrentHub().getClient()) {
-  app.use(Sentry.Handlers.errorHandler());
+// Sentry 에러 핸들러를 우선 적용
+if (sentry && sentry.getCurrentHub().getClient()) {
+  app.use(sentry.Handlers.errorHandler());
 }
 app.use(errorHandler);
 
@@ -207,7 +189,7 @@ const HTTPS_PORT = process.env.HTTPS_PORT || 5443;
 // 개발 환경에서 자체 서명 인증서 생성 및 HTTPS 서버 시작
 if (process.env.NODE_ENV !== 'production') {
   // HTTP 서버 시작
-  app.listen(PORT, () => console.log(`HTTP Server started on port ${PORT}`));
+  app.listen(PORT, () => logger.info('HTTP server started', { port: PORT }));
   
   // 자체 서명 인증서로 HTTPS 서버 시작 (개발용)
   try {
@@ -219,17 +201,17 @@ if (process.env.NODE_ENV !== 'production') {
     
     if (httpsOptions.key && httpsOptions.cert) {
       https.createServer(httpsOptions, app).listen(HTTPS_PORT, () => {
-        console.log(`HTTPS Server started on port ${HTTPS_PORT}`);
+        logger.info('HTTPS server started', { port: HTTPS_PORT });
       });
     } else {
-      console.log('SSL certificates not found. Running HTTP only.');
-      console.log('To enable HTTPS, set SSL_KEY_PATH and SSL_CERT_PATH in .env file');
+      logger.warn('SSL certificates not found. Running HTTP only.');
+      logger.debug('To enable HTTPS, set SSL_KEY_PATH and SSL_CERT_PATH in .env file');
     }
   } catch (error) {
-    console.log('HTTPS setup failed:', error.message);
-    console.log('Running HTTP only');
+    logger.warn('HTTPS setup failed', { error: error.message });
+    logger.info('Running HTTP only');
   }
 } else {
   // 프로덕션에서는 HTTPS만 사용
-  app.listen(PORT, () => console.log(`Production server started on port ${PORT}`));
+  app.listen(PORT, () => logger.info('Production server started', { port: PORT }));
 }

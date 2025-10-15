@@ -10,6 +10,10 @@ import MainTabNavigator, { TAB_BAR_HEIGHT } from './MainTabNavigator';
 import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
 import PlayerScreen from '../screens/PlayerScreen';
 import CreatePlaylistScreen from '../screens/CreatePlaylistScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
+import WriteFeedScreen from '../screens/WriteFeedScreen';
+import SavedScreen from '../screens/SavedScreen';
+import UserProfileScreen from '../screens/UserProfileScreen';
 import MiniPlayer from '../components/MiniPlayer';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 
@@ -39,7 +43,7 @@ const NavigatorWithMiniPlayer = ({ token }) => {
   const shouldShowMiniPlayer = Boolean(
     currentTrack && 
     !isPlayerScreenVisible && 
-    (currentRoute === 'Home' || currentRoute === 'Profile')
+    (currentRoute === 'Home' || currentRoute === 'Profile' || currentRoute === 'Feed')
   );
 
   return (
@@ -53,6 +57,10 @@ const NavigatorWithMiniPlayer = ({ token }) => {
               <Stack.Screen name="Main" component={MainTabNavigator} />
               <Stack.Screen name="PlaylistDetail" component={PlaylistDetailScreen} />
               <Stack.Screen name="CreatePlaylist" component={CreatePlaylistScreen} />
+              <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+              <Stack.Screen name="WriteFeed" component={WriteFeedScreen} options={{ headerShown: false }} />
+              <Stack.Screen name="Saved" component={SavedScreen} />
+              <Stack.Screen name="UserProfile" component={UserProfileScreen} />
               <Stack.Screen
                 name="Player"
                 component={PlayerScreen}

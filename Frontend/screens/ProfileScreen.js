@@ -1,10 +1,18 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import {
+    View,
+    Text,
+    ScrollView,
+    TouchableOpacity,
+    Image,
+    ActivityIndicator,
+    StyleSheet,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { getMe, logout } from '../store/slices/authSlice';
-import { fetchMyPlaylists } from '../store/slices/playlistSlice';
+import { fetchMyPlaylists, fetchLikedPlaylists } from '../store/slices/playlistSlice';
+import { fetchRecentPlaylists } from '../store/slices/recentPlaylistsSlice';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { useSpotifyAuth } from '../hooks/useSpotifyAuth';
@@ -12,14 +20,32 @@ import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { showToast } from '../utils/toast';
 import { exchangeSpotifyCode, getPremiumStatus, fetchSpotifyProfile, clearSpotifySession } from '../store/slices/spotifySlice';
+import { createStyles } from '../utils/ui';
+import {
+    buttonPrimary,
+    buttonSecondary,
+    iconButton as iconButtonStyle,
+    pressableHitSlop,
+    textVariants,
+    section as sectionStyle,
+} from '../utils/uiComponents';
+import {
+    useAppDispatch,
+    useAppSelector,
+    selectAuthUser,
+    selectPlaylistState,
+} from '../store/hooks';
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
 const ProfileScreen = ({ navigation, route }) => {
-    const dispatch = useDispatch();
-    const { user } = useSelector((state) => state.auth);
-    const { userPlaylists, status } = useSelector((state) => state.playlist);
-    const spotify = useSelector((state) => state.spotify);
+    const dispatch = useAppDispatch();
+    const user = useAppSelector(selectAuthUser);
+    const playlistState = useAppSelector(selectPlaylistState);
+    const likedPlaylists = useAppSelector((state) => state.playlist.likedPlaylists);
+    const recentPlaylists = useAppSelector((state) => state.recentPlaylists.items);
+    const spotify = useAppSelector((state) => state.spotify);
+    const userPlaylists = playlistState.userPlaylists || [];
     const userId = user?.id || user?.userId;
     // Spotify 인증 훅 사용 (입력: userId, 효과: 인증 플로우 관리)
     const { connectSpotify, redirectUri, authError } = useSpotifyAuth(userId);
@@ -30,10 +56,16 @@ const ProfileScreen = ({ navigation, route }) => {
             dispatch(getMe());
         }
         dispatch(fetchMyPlaylists());
+        dispatch(fetchLikedPlaylists());
+        dispatch(fetchRecentPlaylists());
     }, [dispatch]);
 
     if (!user) {
-        return <View style={styles.centered}><ActivityIndicator size="large" color="#8A2BE2" /></View>;
+        return (
+            <View style={styles.centered}>
+                <ActivityIndicator size="large" color={styles.accentColor.color} />
+            </View>
+        );
     }
 
     // 라우트 파라미터로 온 postConnect가 있고 아직 연결 안 됐다면 자동 연결 시도
@@ -277,9 +309,22 @@ const ProfileScreen = ({ navigation, route }) => {
         <View style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>프로필</Text>
-                <TouchableOpacity onPress={() => dispatch(logout())} style={styles.logoutButton}>
-                    <Ionicons name="log-out-outline" size={22} color="#b3b3b3" />
-                </TouchableOpacity>
+                <View style={styles.headerActions}>
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('EditProfile')}
+                        style={styles.headerButton}
+                        hitSlop={pressableHitSlop}
+                    >
+                        <Ionicons name="create-outline" size={22} color={styles.iconMuted.color} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => dispatch(logout())}
+                        style={styles.headerButton}
+                        hitSlop={pressableHitSlop}
+                    >
+                        <Ionicons name="log-out-outline" size={22} color={styles.iconMuted.color} />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollViewContent} showsVerticalScrollIndicator={false}>
@@ -311,7 +356,7 @@ const ProfileScreen = ({ navigation, route }) => {
                             style={styles.profileImage}
                         />
                         <View style={styles.profileBadge}>
-                            <Ionicons name="person" size={16} color="#1DB954" />
+                            <Ionicons name="person" size={16} color={styles.spotifyIconConnected.color} />
                         </View>
                     </View>
                     <Text style={styles.displayName}>{user.display_name}</Text>
@@ -329,14 +374,28 @@ const ProfileScreen = ({ navigation, route }) => {
                 </View>
 
                 <View style={styles.actionButtonsContainer}>
-                    <TouchableOpacity style={styles.primaryActionButton} onPress={() => navigation.navigate('CreatePlaylist')}>
-                        <Ionicons name="add" size={20} color="#121212" />
+                    <TouchableOpacity
+                        style={styles.primaryActionButton}
+                        onPress={() => navigation.navigate('CreatePlaylist')}
+                        hitSlop={pressableHitSlop}
+                    >
+                        <Ionicons name="add" size={20} color={styles.primaryActionIcon.color} />
                         <Text style={styles.primaryActionText}>새 플레이리스트</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.secondaryActionButton} onPress={connectSpotify}>
-                        <FontAwesome5 name="spotify" size={18} color={spotify?.isPremium ? '#1DB954' : '#ffffff'} />
-                        <Text style={styles.secondaryActionText}>{spotify?.isPremium ? 'Spotify 연결됨' : 'Spotify 연결'}</Text>
+                    <TouchableOpacity
+                        style={styles.secondaryActionButton}
+                        onPress={connectSpotify}
+                        hitSlop={pressableHitSlop}
+                    >
+                        <FontAwesome5
+                            name="spotify"
+                            size={18}
+                            color={(spotify?.isPremium ? styles.spotifyIconConnected : styles.spotifyIconDisconnected).color}
+                        />
+                        <Text style={styles.secondaryActionText}>
+                            {spotify?.isPremium ? 'Spotify 연결됨' : 'Spotify 연결'}
+                        </Text>
                     </TouchableOpacity>
                 </View>
 
@@ -345,116 +404,117 @@ const ProfileScreen = ({ navigation, route }) => {
                     data={userPlaylists}
                     onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
                 />
+                <HorizontalPlaylist
+                    title="좋아요한 플레이리스트"
+                    data={likedPlaylists}
+                    onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
+                />
+                <HorizontalPlaylist
+                    title="최근에 본 플레이리스트"
+                    data={recentPlaylists}
+                    onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
+                />
 
             </ScrollView>
         </View>
     );
 };
-
-const styles = StyleSheet.create({
+const styles = createStyles(({ colors, spacing, typography, radii, elevation }) => ({
     container: {
         flex: 1,
-        backgroundColor: '#121212'
+        backgroundColor: colors.background,
     },
     centered: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#121212'
+        backgroundColor: colors.background,
+        gap: spacing.sm,
+    },
+    accentColor: {
+        color: colors.accent,
+    },
+    iconMuted: {
+        color: colors.textSecondary,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingTop: 60,
-        paddingBottom: 20,
-        backgroundColor: '#121212',
+        paddingHorizontal: spacing.lg,
+        paddingTop: spacing.xxl,
+        paddingBottom: spacing.md,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: colors.divider,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
     },
     headerTitle: {
-        color: '#ffffff',
+        ...typography.heading,
         fontSize: 28,
-        fontWeight: '700',
         letterSpacing: -0.5,
     },
-    logoutButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#282828',
-        justifyContent: 'center',
-        alignItems: 'center',
+    headerButton: {
+        ...iconButtonStyle({ size: 42 }),
+        backgroundColor: colors.surface,
     },
     spotifyNotice: {
-        marginHorizontal: 16,
-        marginTop: 24,
-        marginBottom: 12,
-        padding: 16,
-        borderRadius: 12,
+        ...sectionStyle({ padding: spacing.md }),
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.accent,
         backgroundColor: 'rgba(29, 185, 84, 0.12)',
-        borderWidth: 1,
-        borderColor: 'rgba(29, 185, 84, 0.4)',
+        gap: spacing.xs,
     },
     spotifyNoticeTitle: {
-        color: '#1DB954',
-        fontSize: 16,
-        fontWeight: '700',
-        marginBottom: 4,
+        ...typography.subheading,
+        color: colors.accent,
     },
     spotifyNoticeText: {
+        ...textVariants.subtitle,
         color: '#e0ffe9',
-        fontSize: 13,
-        lineHeight: 18,
     },
     devInfoBox: {
-        marginHorizontal: 16,
-        marginBottom: 12,
-        padding: 12,
-        borderRadius: 10,
+        ...sectionStyle({ padding: spacing.sm }),
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: 'rgba(255,255,255,0.12)',
         backgroundColor: 'rgba(255,255,255,0.05)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
+        gap: spacing.xs,
     },
     devInfoTitle: {
-        color: '#d1d1d1',
+        ...textVariants.subtitle,
         fontSize: 12,
-        fontWeight: '600',
-        marginBottom: 4,
         textTransform: 'uppercase',
-        letterSpacing: 0.6
+        letterSpacing: 0.6,
     },
     devInfoValue: {
-        color: '#ffffff',
+        ...textVariants.subtitle,
         fontSize: 12,
-        lineHeight: 16
+        color: colors.textPrimary,
     },
     devInfoHint: {
+        ...textVariants.subtitle,
         color: '#f7b733',
         fontSize: 11,
-        marginTop: 6
     },
     profileInfo: {
         alignItems: 'center',
-        paddingVertical: 32,
-        paddingHorizontal: 16,
+        paddingVertical: spacing.xl,
+        paddingHorizontal: spacing.lg,
+        gap: spacing.md,
     },
     profileImageContainer: {
         width: 140,
         height: 140,
         borderRadius: 70,
-        backgroundColor: '#282828',
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: spacing.lg,
         position: 'relative',
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 8,
-        },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-        elevation: 12,
+        ...elevation.card,
     },
     profileImage: {
         width: 140,
@@ -463,112 +523,96 @@ const styles = StyleSheet.create({
     },
     profileBadge: {
         position: 'absolute',
-        bottom: 8,
-        right: 8,
+        bottom: spacing.xs,
+        right: spacing.xs,
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: '#121212',
+        backgroundColor: colors.background,
         borderWidth: 2,
-        borderColor: '#1DB954',
+        borderColor: colors.accent,
         justifyContent: 'center',
         alignItems: 'center',
     },
     displayName: {
-        color: '#ffffff',
-        fontSize: 36,
-        fontWeight: '900',
-        marginBottom: 20,
-        letterSpacing: -1,
+        ...typography.heading,
+        fontSize: 32,
+        fontWeight: '800',
+        letterSpacing: -0.8,
         textAlign: 'center',
     },
     statsContainer: {
+        ...sectionStyle({ padding: spacing.md }),
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#1a1a1a',
-        borderRadius: 12,
-        paddingVertical: 18,
-        paddingHorizontal: 40,
-        minWidth: 280,
+        gap: spacing.lg,
     },
     statItem: {
         alignItems: 'center',
-        flex: 1,
-        minWidth: 100,
+        minWidth: 90,
+        gap: spacing.xs,
     },
     statDivider: {
-        width: 1,
-        height: 24,
-        backgroundColor: '#404040',
-        marginHorizontal: 24,
+        width: StyleSheet.hairlineWidth,
+        height: 32,
+        backgroundColor: colors.divider,
     },
     statNumber: {
-        color: '#ffffff',
+        ...typography.heading,
         fontSize: 24,
-        fontWeight: '800',
-        marginBottom: 6,
     },
     statLabel: {
-        color: '#b3b3b3',
-        fontSize: 14,
-        fontWeight: '600',
+        ...textVariants.subtitle,
         textTransform: 'uppercase',
         letterSpacing: 0.3,
-        textAlign: 'center',
-        lineHeight: 16,
     },
     actionButtonsContainer: {
         flexDirection: 'row',
-        paddingHorizontal: 20,
-        marginBottom: 32,
-        gap: 12,
+        paddingHorizontal: spacing.lg,
+        marginBottom: spacing.xl,
+        gap: spacing.md,
     },
     primaryActionButton: {
+        ...buttonPrimary({}),
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#1DB954',
-        paddingVertical: 14,
-        borderRadius: 28,
-        shadowColor: '#1DB954',
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 8,
+        gap: spacing.sm,
     },
     primaryActionText: {
-        color: '#121212',
-        fontSize: 14,
+        color: colors.background,
+        fontSize: 15,
         fontWeight: '700',
-        marginLeft: 8,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.4,
+    },
+    primaryActionIcon: {
+        color: colors.background,
     },
     secondaryActionButton: {
+        ...buttonSecondary({}),
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        borderColor: '#404040',
-        paddingVertical: 14,
-        paddingHorizontal: 20,
-        borderRadius: 28,
+        gap: spacing.sm,
     },
     secondaryActionText: {
-        color: '#ffffff',
-        fontSize: 14,
+        color: colors.textPrimary,
+        fontSize: 15,
         fontWeight: '600',
-        marginLeft: 8,
+    },
+    secondaryActionIcon: {
+        color: colors.textPrimary,
     },
     scrollViewContent: {
-        paddingBottom: 100,
-        backgroundColor: '#121212',
+        paddingBottom: spacing.xxl * 2,
+        backgroundColor: colors.background,
+        gap: spacing.xl,
     },
-});
+    spotifyIconConnected: {
+        color: colors.accent,
+    },
+    spotifyIconDisconnected: {
+        color: colors.textPrimary,
+    },
+}));
 
 export default ProfileScreen;

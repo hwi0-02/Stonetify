@@ -1,16 +1,10 @@
-const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { follow: followValidators } = require('../utils/validators');
 
 class Follow {
   static async create(followData) {
-    const { follower_id, following_id } = followData;
-    
-    const follow = {
-      follower_id,
-      following_id,
-      followed_at: Date.now()
-    };
-    
-    const followId = await RealtimeDBHelpers.createDocument(COLLECTIONS.FOLLOWS, follow);
+    const payload = followValidators.validateFollowCreate(followData);
+    const followId = await RealtimeDBHelpers.createDocument(COLLECTIONS.FOLLOWS, payload);
     return followId;
   }
 
@@ -27,11 +21,11 @@ class Follow {
   }
 
   static async findByFollowerAndFollowing(followerId, followingId) {
-    const allFollows = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.FOLLOWS);
-    const match = allFollows.find(f => 
-      f.follower_id === followerId && f.following_id === followingId
-    );
-    return match || null;
+    const matches = await RealtimeDBHelpers.queryDocumentsMultiple(COLLECTIONS.FOLLOWS, [
+      { field: 'follower_id', operator: '==', value: followerId },
+      { field: 'following_id', operator: '==', value: followingId },
+    ]);
+    return matches[0] || null;
   }
 
   static async delete(id) {

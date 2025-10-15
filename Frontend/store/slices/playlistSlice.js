@@ -1,9 +1,12 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import apiService from '../../services/apiService';
+import { createStatusHandlers } from '../utils/statusHelpers';
 
 const initialState = {
   userPlaylists: [],
   likedPlaylists: [],
+  recommendedPlaylists: [],
+  forYouPlaylists: [],
   currentPlaylist: null,
   status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
   error: null,
@@ -134,49 +137,70 @@ export const toggleLikePlaylist = createAsyncThunk(
   }
 );
 
+export const fetchRecommendedPlaylists = createAsyncThunk(
+  'playlist/fetchRecommendedPlaylists',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await apiService.getRandomPlaylists();
+    } catch (error) {
+      return rejectWithValue('추천 플레이리스트를 불러오는데 실패했습니다.');
+    }
+  }
+);
+
+export const fetchForYouPlaylists = createAsyncThunk(
+  'playlist/fetchForYouPlaylists',
+  async (_, { rejectWithValue }) => {
+    try {
+      return await apiService.getRecommendedPlaylists();
+    } catch (error) {
+      return rejectWithValue('회원님을 위한 추천을 불러오는데 실패했습니다.');
+    }
+  }
+);
+
 
 const playlistSlice = createSlice({
   name: 'playlist',
   initialState,
   reducers: {},
   extraReducers: (builder) => {
+    const { setPending, setFulfilled, setRejected } = createStatusHandlers();
     builder
       // fetchMyPlaylists (내 플레이리스트)
       .addCase(fetchMyPlaylists.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(fetchMyPlaylists.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         state.userPlaylists = action.payload;
       })
       .addCase(fetchMyPlaylists.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       // fetchPlaylistsByUserId (다른 사용자 플레이리스트)
       .addCase(fetchPlaylistsByUserId.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(fetchPlaylistsByUserId.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         // 이 경우, userPlaylists를 덮어쓸지, 다른 state를 사용할지 결정해야 함.
         // 현재는 프로필 화면에서만 사용하므로, 덮어써도 무방할 수 있음.
         state.userPlaylists = action.payload;
       })
       .addCase(fetchPlaylistsByUserId.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       // 기타 Thunks
       .addCase(fetchLikedPlaylists.fulfilled, (state, action) => {
         state.likedPlaylists = action.payload;
       })
       .addCase(fetchPlaylistDetails.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
         state.currentPlaylist = null; // 로딩 시작 시 초기화
       })
       .addCase(fetchPlaylistDetails.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         state.currentPlaylist = action.payload;
         
         // Log to verify songs have spotify_id
@@ -194,25 +218,35 @@ const playlistSlice = createSlice({
         }
       })
       .addCase(fetchPlaylistDetails.rejected, (state, action) => {
-        state.status = 'failed';
+        setRejected(state, action);
+      })
+      .addCase(fetchRecommendedPlaylists.fulfilled, (state, action) => {
+        state.recommendedPlaylists = Array.isArray(action.payload) ? action.payload : [];
+      })
+      .addCase(fetchRecommendedPlaylists.rejected, (state, action) => {
+        state.error = action.payload;
+      })
+      .addCase(fetchForYouPlaylists.fulfilled, (state, action) => {
+        state.forYouPlaylists = Array.isArray(action.payload) ? action.payload : [];
+      })
+      .addCase(fetchForYouPlaylists.rejected, (state, action) => {
         state.error = action.payload;
       })
       .addCase(createPlaylist.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(createPlaylist.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         state.userPlaylists.unshift(action.payload);
       })
       .addCase(createPlaylist.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(updatePlaylist.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(updatePlaylist.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         // 현재 플레이리스트 업데이트
         if (state.currentPlaylist && state.currentPlaylist.id === action.payload.id) {
           state.currentPlaylist = { ...state.currentPlaylist, ...action.payload };
@@ -224,14 +258,13 @@ const playlistSlice = createSlice({
         }
       })
       .addCase(updatePlaylist.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(deletePlaylist.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(deletePlaylist.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         const playlistId = action.payload;
         // 사용자 플레이리스트 목록에서 제거
         state.userPlaylists = state.userPlaylists.filter(p => p.id !== playlistId);
@@ -241,8 +274,7 @@ const playlistSlice = createSlice({
         }
       })
       .addCase(deletePlaylist.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(toggleLikePlaylist.fulfilled, (state, action) => {
         const { playlistId, liked } = action.payload;
@@ -268,24 +300,21 @@ const playlistSlice = createSlice({
         }
       })
       .addCase(toggleLikePlaylist.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(createShareLinkAsync.fulfilled, (state, action) => {
         // 공유 링크 생성 성공 시 특별한 상태 업데이트는 필요 없음
         // 필요시 공유 링크를 state에 저장할 수 있음
       })
       .addCase(createShareLinkAsync.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(fetchSharedPlaylist.fulfilled, (state, action) => {
         state.currentPlaylist = action.payload;
-        state.status = 'succeeded';
+        setFulfilled(state);
       })
       .addCase(fetchSharedPlaylist.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       });
   },
 });

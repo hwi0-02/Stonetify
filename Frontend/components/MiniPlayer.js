@@ -2,17 +2,61 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
-import { useSelector, useDispatch } from 'react-redux';
 import { pauseTrack, resumeTrack, nextTrack } from '../store/slices/playerSlice';
 import placeholderAlbum from '../assets/images/placeholder_album.png';
 import { useNavigation } from '@react-navigation/native';
+import { createStyles } from '../utils/ui';
+import { listItem as listItemStyle, textVariants, pressableHitSlop } from '../utils/uiComponents';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 
 export const MINI_PLAYER_HEIGHT = 72;
 
+const styles = createStyles(({ colors, spacing, typography }) => ({
+  container: {
+    ...listItemStyle({ paddingHorizontal: spacing.md, paddingVertical: spacing.sm, withDivider: false }),
+    backgroundColor: colors.surface,
+    height: MINI_PLAYER_HEIGHT,
+    gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  left: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.sm,
+  },
+  art: {
+    width: 44,
+    height: 44,
+    borderRadius: spacing.xs,
+    backgroundColor: colors.muted,
+  },
+  meta: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  title: {
+    ...typography.subheading,
+    fontSize: 14,
+  },
+  artist: {
+    ...textVariants.subtitle,
+  },
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  iconBtn: {
+    padding: spacing.xs,
+  },
+}));
+
 const MiniPlayer = () => {
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const navigation = useNavigation();
-  const { currentTrack, isPlaying, queueIndex, queue } = useSelector(s => s.player);
+  const { currentTrack, isPlaying } = useAppSelector((state) => state.player);
 
   if (!currentTrack) return null;
 
@@ -45,35 +89,15 @@ const MiniPlayer = () => {
         </View>
       </View>
       <View style={styles.controls}>
-        <TouchableOpacity onPress={handlePlayPause} style={styles.iconBtn}>
+        <TouchableOpacity onPress={handlePlayPause} style={styles.iconBtn} hitSlop={pressableHitSlop}>
           <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color="#fff" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleNext} style={styles.iconBtn}>
+        <TouchableOpacity onPress={handleNext} style={styles.iconBtn} hitSlop={pressableHitSlop}>
           <Ionicons name="play-skip-forward" size={22} color="#fff" />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#1e1e1e',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    height: MINI_PLAYER_HEIGHT,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#333'
-  },
-  left: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  art: { width: 44, height: 44, borderRadius: 4, backgroundColor: '#333' },
-  meta: { marginLeft: 10, flex: 1 },
-  title: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  artist: { color: '#bbb', fontSize: 12, marginTop: 2 },
-  controls: { flexDirection: 'row', alignItems: 'center' },
-  iconBtn: { padding: 8 }
-});
 
 export default MiniPlayer;

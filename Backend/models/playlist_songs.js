@@ -1,17 +1,11 @@
-const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { playlistSong: playlistSongValidators } = require('../utils/validators');
+const { buildUpdatePayload } = require('../utils/modelUtils');
 
 class PlaylistSongs {
   static async create(playlistSongsData) {
-    const { playlist_id, song_id, position } = playlistSongsData;
-    
-    const playlistSong = {
-      playlist_id,
-      song_id,
-      position: position !== undefined ? position : 0,
-      added_at: Date.now()
-    };
-    
-    const playlistSongId = await RealtimeDBHelpers.createDocument(COLLECTIONS.PLAYLIST_SONGS, playlistSong);
+    const payload = playlistSongValidators.validatePlaylistSongCreate(playlistSongsData);
+    const playlistSongId = await RealtimeDBHelpers.createDocument(COLLECTIONS.PLAYLIST_SONGS, payload);
     return playlistSongId;
   }
 
@@ -28,52 +22,42 @@ class PlaylistSongs {
   }
 
   static async findByPlaylistAndSong(playlistId, songId) {
-    const allPlaylistSongs = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.PLAYLIST_SONGS);
-    const match = allPlaylistSongs.find(ps => 
-      ps.playlist_id === playlistId && ps.song_id === songId
-    );
-    return match || null;
+    const matches = await RealtimeDBHelpers.queryDocumentsMultiple(COLLECTIONS.PLAYLIST_SONGS, [
+      { field: 'playlist_id', operator: '==', value: playlistId },
+      { field: 'song_id', operator: '==', value: songId },
+    ]);
+    return matches[0] || null;
   }
 
   static async delete(id) {
-    console.log('PlaylistSongs.delete 호출됨:', id);
     await RealtimeDBHelpers.deleteDocument(COLLECTIONS.PLAYLIST_SONGS, id);
-    console.log('PlaylistSongs 삭제 완료');
   }
 
   static async deleteByPlaylistAndSong(playlistId, songId) {
-    console.log('PlaylistSongs.deleteByPlaylistAndSong 호출됨:', { playlistId, songId });
-    
     const playlistSong = await this.findByPlaylistAndSong(playlistId, songId);
     if (playlistSong) {
       await this.delete(playlistSong.id);
-      console.log('곡이 플레이리스트에서 제거됨');
       return true;
     }
-    
-    console.log('제거할 곡을 찾을 수 없음');
     return false;
   }
 
   static async deleteByPlaylistId(playlistId) {
-    console.log('PlaylistSongs.deleteByPlaylistId 호출됨:', playlistId);
-    
     const playlistSongs = await this.findByPlaylistId(playlistId);
-    console.log('삭제할 곡 개수:', playlistSongs.length);
-    
     for (const playlistSong of playlistSongs) {
       await this.delete(playlistSong.id);
     }
-    
-    console.log('플레이리스트의 모든 곡 삭제 완료');
   }
 
   static async update(id, updateData) {
-    const newData = {
-      ...updateData,
-      updated_at: Date.now()
-    };
-    await RealtimeDBHelpers.updateDocument(COLLECTIONS.PLAYLIST_SONGS, id, newData);
+    const current = await this.findById(id);
+    if (!current) return null;
+    const sanitized = playlistSongValidators.validatePlaylistSongUpdate(updateData);
+    const payload = buildUpdatePayload(current, sanitized);
+    if (!Object.keys(payload).length) {
+      return current;
+    }
+    await RealtimeDBHelpers.updateDocument(COLLECTIONS.PLAYLIST_SONGS, id, payload);
     return await this.findById(id);
   }
 
@@ -89,7 +73,7 @@ class PlaylistSongs {
     const maxPosition = existingSongs.length > 0 
       ? Math.max(...existingSongs.map(s => s.position || 0))
       : -1;
-    
+
     return await this.create({
       playlist_id: playlistId,
       song_id: songId,

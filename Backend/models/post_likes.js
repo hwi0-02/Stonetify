@@ -1,15 +1,16 @@
-const { db, COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { COLLECTIONS, RealtimeDBHelpers } = require('../config/firebase');
+const { postLike: postLikeValidators } = require('../utils/validators');
 
 class PostLike {
   static async create(postLikeData) {
-    const { user_id, post_id } = postLikeData;
-    
+    const payload = postLikeValidators.validatePostLikeCreate(postLikeData);
+    const now = Date.now();
     const postLike = {
-      user_id,
-      post_id,
-      liked_at: Date.now()
+      ...payload,
+      liked_at: payload.liked_at || now,
+      created_at: now,
+      updated_at: now,
     };
-    
     const postLikeId = await RealtimeDBHelpers.createDocument(COLLECTIONS.POST_LIKES, postLike);
     return postLikeId;
   }
@@ -27,11 +28,11 @@ class PostLike {
   }
 
   static async findByUserAndPost(userId, postId) {
-    const allPostLikes = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.POST_LIKES);
-    const match = allPostLikes.find(pl => 
-      pl.user_id === userId && pl.post_id === postId
-    );
-    return match || null;
+    const matches = await RealtimeDBHelpers.queryDocumentsMultiple(COLLECTIONS.POST_LIKES, [
+      { field: 'user_id', operator: '==', value: userId },
+      { field: 'post_id', operator: '==', value: postId },
+    ]);
+    return matches[0] || null;
   }
 
   static async delete(id) {

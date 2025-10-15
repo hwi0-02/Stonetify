@@ -1,89 +1,100 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createStatusHandlers } from '../utils/statusHelpers';
 
-const SEARCH_HISTORY_KEY = 'searchHistory';
+const SEARCH_HISTORY_KEY = 'search_history';
 const MAX_HISTORY_ITEMS = 10;
 
-// 검색 히스토리 로드
 export const loadSearchHistory = createAsyncThunk(
   'search/loadHistory',
-  async () => {
+  async (_, { rejectWithValue }) => {
     try {
-      const history = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
-      return history ? JSON.parse(history) : [];
+      const stored = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
+      return stored ? JSON.parse(stored) : [];
     } catch (error) {
-      console.error('검색 히스토리 로드 실패:', error);
-      return [];
+      console.error('검색 기록을 불러오지 못했습니다.', error);
+      return rejectWithValue(error);
     }
   }
 );
 
-// 검색어 저장
-export const saveSearchTerm = createAsyncThunk(
-  'search/saveTerm',
-  async (term, { getState }) => {
-    try {
-      const { search } = getState();
-      const newHistory = [term, ...search.history.filter(item => item !== term)]
-        .slice(0, MAX_HISTORY_ITEMS);
-      
-      await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
-      return newHistory;
-    } catch (error) {
-      console.error('검색어 저장 실패:', error);
-      throw error;
-    }
+const persistHistory = async (history) => {
+  try {
+    await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
+  } catch (error) {
+    console.error('검색 기록을 저장하지 못했습니다.', error);
   }
-);
-
-// 검색 히스토리 삭제
-export const clearSearchHistory = createAsyncThunk(
-  'search/clearHistory',
-  async () => {
-    try {
-      await AsyncStorage.removeItem(SEARCH_HISTORY_KEY);
-      return [];
-    } catch (error) {
-      console.error('검색 히스토리 삭제 실패:', error);
-      throw error;
-    }
-  }
-);
-
-const initialState = {
-  history: [],
-  recentSearches: [],
-  popularSearches: ['K-pop', 'Jazz', 'Rock', 'Pop', 'Classical'],
-  status: 'idle',
 };
 
 const searchSlice = createSlice({
   name: 'search',
-  initialState,
+  initialState: {
+    history: [],
+    popularSearches: ['K-pop', 'Jazz', 'Rock', 'Pop', 'Classical'],
+    status: 'idle',
+  },
   reducers: {
     addRecentSearch: (state, action) => {
-      const term = action.payload;
-      state.recentSearches = [term, ...state.recentSearches.filter(item => item !== term)]
-        .slice(0, 5);
+      const entry = action.payload;
+      if (!entry || !entry.type || !entry.data) {
+        return;
+      }
+
+      const identifier = entry.data.id || entry.data.spotify_id;
+      if (!identifier) {
+        return;
+      }
+
+      const existingIndex = state.history.findIndex((item) => {
+        const currentId = item.data.id || item.data.spotify_id;
+        return item.type === entry.type && currentId === identifier;
+      });
+
+      if (existingIndex > -1) {
+        state.history.splice(existingIndex, 1);
+      }
+
+      state.history.unshift(entry);
+
+      if (state.history.length > MAX_HISTORY_ITEMS) {
+        state.history = state.history.slice(0, MAX_HISTORY_ITEMS);
+      }
+
+      persistHistory(state.history);
     },
-    removeSearchTerm: (state, action) => {
-      state.history = state.history.filter(term => term !== action.payload);
+    removeRecentSearch: (state, action) => {
+      const entry = action.payload;
+      const identifier = entry?.data?.id || entry?.data?.spotify_id;
+
+      state.history = state.history.filter((item) => {
+        const currentId = item.data.id || item.data.spotify_id;
+        return !(item.type === entry.type && currentId === identifier);
+      });
+
+      persistHistory(state.history);
+    },
+    clearSearchHistory: (state) => {
+      state.history = [];
+      AsyncStorage.removeItem(SEARCH_HISTORY_KEY).catch((error) =>
+        console.error('검색 기록을 삭제하지 못했습니다.', error)
+      );
     },
   },
   extraReducers: (builder) => {
+    const { setPending, setFulfilled, setRejected } = createStatusHandlers();
     builder
+      .addCase(loadSearchHistory.pending, (state) => {
+        setPending(state);
+      })
       .addCase(loadSearchHistory.fulfilled, (state, action) => {
-        state.history = action.payload;
-        state.status = 'succeeded';
+        setFulfilled(state);
+        state.history = Array.isArray(action.payload) ? action.payload : [];
       })
-      .addCase(saveSearchTerm.fulfilled, (state, action) => {
-        state.history = action.payload;
-      })
-      .addCase(clearSearchHistory.fulfilled, (state) => {
-        state.history = [];
+      .addCase(loadSearchHistory.rejected, (state, action) => {
+        setRejected(state, action);
       });
   },
 });
 
-export const { addRecentSearch, removeSearchTerm } = searchSlice.actions;
+export const { addRecentSearch, removeRecentSearch, clearSearchHistory } = searchSlice.actions;
 export default searchSlice.reducer;

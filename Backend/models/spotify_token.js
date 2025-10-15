@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const { COLLECTIONS, RealtimeDBHelpers, isFirebaseReady } = require('../config/firebase');
 const { encrypt, decrypt } = require('../utils/encryption');
+const { logger } = require('../utils/logger');
 
 // Memory fallback for environments where Firebase is not initialized (e.g., missing env vars in development)
 const inMemoryTokens = new Map();
@@ -213,7 +214,7 @@ class SpotifyTokenModel {
   }
 
   static async markRevoked(userId) {
-    console.log('🔴 [SpotifyTokenModel] Marking token as revoked for user:', userId);
+    logger.warn('Spotify token marked as revoked', { userId });
     return this.revoke(userId);
   }
 

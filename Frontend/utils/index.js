@@ -4,6 +4,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+const parseNumber = (value, fallback) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const LOCAL_IP = process.env.EXPO_PUBLIC_LOCAL_IP || process.env.BACKEND_HOST || 'localhost';
+const BACKEND_PORT = parseNumber(process.env.EXPO_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT, 5000);
+const PROXY_PORT = parseNumber(process.env.EXPO_PUBLIC_PROXY_PORT || process.env.PROXY_PORT, 3001);
+const TUNNEL_API_URL = process.env.EXPO_PUBLIC_TUNNEL_API_URL || process.env.TUNNEL_API_URL || '';
+const API_TIMEOUT = parseNumber(process.env.EXPO_PUBLIC_API_TIMEOUT || process.env.API_TIMEOUT, 15000);
+const RETRY_DELAY = parseNumber(
+  process.env.EXPO_PUBLIC_API_RETRY_DELAY ||
+  process.env.EXPO_PUBLIC_RETRY_DELAY ||
+  process.env.RETRY_DELAY,
+  1000
+);
+
 // ==================== Storage Utilities ====================
 
 export const storage = {
@@ -192,16 +209,17 @@ export const async = {
 export const CONSTANTS = {
   // API 설정
   API: {
-    TIMEOUT: 15000,
-    RETRY_DELAY: 1000,
+    TIMEOUT: API_TIMEOUT,
+    RETRY_DELAY: RETRY_DELAY,
     MAX_RETRIES: 3,
   },
   
   // 네트워크 설정
   NETWORK: {
-    LOCAL_IP: '192.168.219.108',
-    BACKEND_PORT: 5000,
-    PROXY_PORT: 3001,
+    LOCAL_IP,
+    BACKEND_PORT,
+    PROXY_PORT,
+    TUNNEL_API_URL,
   },
   
   // 저장소 키

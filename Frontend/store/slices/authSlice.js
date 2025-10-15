@@ -1,6 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import apiService from '../../services/apiService'; // default import로 변경
+import apiService from '../../services/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
+import { createStatusHandlers } from '../utils/statusHelpers';
 
 // ==================== INITIAL STATE ====================
 
@@ -64,6 +66,58 @@ export const getMe = createAsyncThunk('auth/getMe', async (_, thunkAPI) => {
     }
 });
 
+export const updateUserProfile = createAsyncThunk(
+  'auth/updateUserProfile',
+  async ({ displayName, imageUri, mimeType }, { rejectWithValue, getState }) => {
+    try {
+      const { user } = getState().auth;
+
+      if (!user || !user.id) {
+        return rejectWithValue('사용자 정보를 확인할 수 없습니다. 다시 로그인해주세요.');
+      }
+
+      if (!displayName || !displayName.trim()) {
+        return rejectWithValue('닉네임을 입력해주세요.');
+      }
+
+      const payload = {
+        display_name: displayName.trim(),
+      };
+
+      // ✅ 이미지가 선택된 경우만 처리
+      if (imageUri) {
+        let localUri = imageUri;
+
+        // 1️⃣ content:// 형태면 앱 디렉토리로 복사
+        if (imageUri.startsWith('content://')) {
+          const fileName = `profile_${Date.now()}.jpg`;
+          const dest = `${FileSystem.cacheDirectory}${fileName}`;
+          await FileSystem.copyAsync({ from: imageUri, to: dest });
+          localUri = dest;
+        }
+
+        // 2️⃣ Base64 읽기 (이제 안전함)
+        const base64Data = await FileSystem.readAsStringAsync(localUri, {
+          // 일부 환경(웹/구버전)에서 FileSystem.EncodingType가 없을 수 있어 문자열 사용
+          encoding: 'base64',
+        });
+
+        payload.profile_image_base64 = base64Data;
+        payload.profile_image_mime_type =
+          mimeType && mimeType.startsWith('image/') ? mimeType : 'image/jpeg';
+      }
+
+      const updatedProfile = await apiService.updateProfile(payload);
+      return updatedProfile;
+    } catch (error) {
+      console.error('❌ 프로필 업데이트 오류:', error);
+      const errorMessage = error.message || '프로필 업데이트에 실패했습니다.';
+      return rejectWithValue(errorMessage);
+    }
+  }
+);
+
+
 // ==================== SLICE ====================
 
 const authSlice = createSlice({
@@ -76,37 +130,59 @@ const authSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
+    const { setPending, setFulfilled, setRejected } = createStatusHandlers();
     builder
       .addCase(register.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(register.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         state.user = action.payload;
         state.token = action.payload.token;
       })
       .addCase(register.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(login.pending, (state) => {
-        state.status = 'loading';
+        setPending(state);
       })
       .addCase(login.fulfilled, (state, action) => {
-        state.status = 'succeeded';
+        setFulfilled(state);
         state.user = action.payload;
         state.token = action.payload.token;
       })
       .addCase(login.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload;
+        setRejected(state, action);
       })
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.token = null;
+        state.status = 'idle';
+        state.error = null;
       })
       .addCase(getMe.fulfilled, (state, action) => {
+        setFulfilled(state);
         state.user = action.payload;
+      })
+      .addCase(getMe.rejected, (state, action) => {
+        setRejected(state, action);
+      })
+      .addCase(updateUserProfile.pending, (state) => {
+        setPending(state);
+      })
+      .addCase(updateUserProfile.fulfilled, (state, action) => {
+        setFulfilled(state);
+        if (!state.user) {
+          state.user = action.payload;
+        } else {
+          state.user = {
+            ...state.user,
+            ...action.payload,
+          };
+        }
+      })
+      .addCase(updateUserProfile.rejected, (state, action) => {
+        setRejected(state, action);
       });
   },
 });

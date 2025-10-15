@@ -5,6 +5,7 @@ const {
     createPlaylist,
     getPlaylistById,
     getPlaylistsByUser,
+    searchPlaylists,
     updatePlaylist,
     deletePlaylist,
     addSongToPlaylist,
@@ -16,10 +17,15 @@ const {
     getShareStats,
     deactivateShareLink,
     getMyLikedSongs,
+    getRandomPlaylists,
+    toggleLikeSong,
 } = require('../controllers/playlistController');
 const { protect } = require('../middleware/authMiddleware');
 
 // @/api/playlists/
+
+// 랜덤 플레이리스트 추천
+router.get('/random', getRandomPlaylists);
 
 // 내 플레이리스트 (메인화면)
 router.get('/me', protect, getMyPlaylists);
@@ -28,6 +34,9 @@ router.get('/me', protect, getMyPlaylists);
 router.get('/liked', protect, getLikedPlaylists);
 router.get('/songs/liked/me', protect, getMyLikedSongs);
 
+// 플레이리스트 검색
+router.get('/search', searchPlaylists);
+
 // 플레이리스트 좋아요/취소 토글
 router.post('/:id/like', protect, likePlaylist);
 
@@ -35,7 +44,7 @@ router.post('/:id/like', protect, likePlaylist);
 router.post('/:id/songs', protect, addSongToPlaylist);
 router.delete('/:playlistId/songs/:songId', protect, removeSongFromPlaylist);
 // 곡 좋아요 토글
-router.post('/songs/:songId/like', protect, (req, res, next) => require('../controllers/playlistController').toggleLikeSong(req, res, next));
+router.post('/songs/:songId/like', protect, toggleLikeSong);
 
 
 // 플레이리스트 공유 관련 라우트 (개선된 버전)

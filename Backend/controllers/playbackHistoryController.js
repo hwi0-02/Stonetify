@@ -1,46 +1,72 @@
-// Playback History Event Controller
-// Provides endpoints for client to record playback lifecycle events.
+// 재생 기록 컨트롤러
+// 클라이언트가 재생 시작/완료 이벤트를 기록할 수 있도록 API를 제공한다.
 // POST /api/spotify/playback/history/start { userId, track: { id, name, artists, uri }, playbackSource }
 // POST /api/spotify/playback/history/complete { userId, historyId, positionMs, durationMs }
-// Optionally used for skip by sending positionMs < durationMs.
+// positionMs < durationMs로 전달하면 중간에 넘김(스킵)한 것으로 간주한다.
 
+const asyncHandler = require('express-async-handler');
 const PlaybackHistoryModel = require('../models/playback_history');
+const { successResponse } = require('../utils/responses');
+const { ApiError } = require('../utils/errors');
+const { logger } = require('../utils/logger');
 
-function validateTrack(track){
-  if(!track || !track.id || !track.name) throw new Error('track.id and track.name required');
-  
-  // Validate that track.id is a Spotify ID format (22 alphanumeric chars or spotify:track: URI)
-  // Firebase IDs start with '-' and contain underscores, which are invalid for Spotify
-  const isSpotifyUri = track.id?.startsWith('spotify:track:');
-  const isSpotifyId = /^[a-zA-Z0-9]{22}$/.test(track.id);
-  
-  if (!isSpotifyUri && !isSpotifyId) {
-    throw new Error(`Invalid Spotify track ID format: ${track.id}. Expected 22-char alphanumeric ID or spotify:track: URI`);
+const isValidSpotifyTrackId = (trackId) => {
+  if (!trackId) return false;
+  if (trackId.startsWith('spotify:track:')) {
+    const segments = trackId.split(':');
+    return segments.length === 3 && /^[a-zA-Z0-9]{22}$/.test(segments[2]);
   }
-}
-
-exports.start = async (req,res) => {
-  try {
-    const { userId, track, playbackSource } = req.body || {};
-    if(!userId) return res.status(400).json({ message: 'userId required' });
-    validateTrack(track);
-    const id = await PlaybackHistoryModel.createStart({ userId, track, playbackSource });
-    res.json({ historyId: id });
-  } catch(e){
-    console.error('[PlaybackHistory][start]', e.message);
-    res.status(500).json({ message: 'failed to start history' });
-  }
+  return /^[a-zA-Z0-9]{22}$/.test(trackId);
 };
 
-exports.complete = async (req,res) => {
-  try {
-    const { userId, historyId, positionMs, durationMs } = req.body || {};
-    if(!userId) return res.status(400).json({ message: 'userId required' });
-    if(!historyId) return res.status(400).json({ message: 'historyId required' });
-    await PlaybackHistoryModel.complete(historyId, { positionMs: positionMs || 0, durationMs: durationMs || null });
-    res.json({ success: true });
-  } catch(e){
-    console.error('[PlaybackHistory][complete]', e.message);
-    res.status(500).json({ message: 'failed to complete history' });
+const startPlaybackHistory = asyncHandler(async (req, res) => {
+  const { userId, track, playbackSource } = req.body || {};
+
+  if (!userId) {
+    throw ApiError.badRequest('userId가 필요합니다.', [{ field: 'userId' }]);
   }
+  if (!track) {
+    throw ApiError.badRequest('track 정보가 필요합니다.', [{ field: 'track' }]);
+  }
+  if (!isValidSpotifyTrackId(track.id)) {
+    throw ApiError.badRequest('유효한 Spotify 트랙 ID가 아닙니다.', [{ field: 'track.id' }]);
+  }
+  if (!track.name) {
+    throw ApiError.badRequest('트랙 이름이 필요합니다.', [{ field: 'track.name' }]);
+  }
+
+  const id = await PlaybackHistoryModel.createStart({ userId, track, playbackSource });
+  logger.info('Playback history started', { userId, historyId: id, trackId: track.id });
+
+  successResponse(res, {
+    statusCode: 201,
+    data: { historyId: id },
+    message: '재생 기록이 시작되었습니다.',
+  });
+});
+
+const completePlaybackHistory = asyncHandler(async (req, res) => {
+  const { userId, historyId, positionMs, durationMs } = req.body || {};
+
+  if (!userId) {
+    throw ApiError.badRequest('userId가 필요합니다.', [{ field: 'userId' }]);
+  }
+  if (!historyId) {
+    throw ApiError.badRequest('historyId가 필요합니다.', [{ field: 'historyId' }]);
+  }
+
+  await PlaybackHistoryModel.complete(historyId, {
+    positionMs: positionMs ?? 0,
+    durationMs: durationMs ?? null,
+  });
+  logger.debug('Playback history completed', { userId, historyId, positionMs, durationMs });
+
+  successResponse(res, {
+    message: '재생 기록이 완료되었습니다.',
+  });
+});
+
+module.exports = {
+  start: startPlaybackHistory,
+  complete: completePlaybackHistory,
 };

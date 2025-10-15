@@ -1,246 +1,329 @@
-// Spotify PKCE Auth Controller (Fixed PKCE-only, 2025-10-08)
-// Resolves: refresh token revoked / no stored refresh token issues
-
 const axios = require('axios');
+const asyncHandler = require('express-async-handler');
 const SpotifyTokenModel = require('../models/spotify_token');
+const { successResponse } = require('../utils/responses');
+const { ApiError } = require('../utils/errors');
+const { ERROR_CODES } = require('../utils/constants');
+const { logger } = require('../utils/logger');
 
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 const SPOTIFY_API_BASE_URL = 'https://api.spotify.com/v1';
 
-/**
- * PKCE 전용 요청 헤더/파라미터 구성
- * - Authorization 헤더(Basic) 금지
- * - client_id는 반드시 BODY에 포함
- */
-function prepareTokenRequest(params, clientIdOverride) {
+const prepareTokenRequest = (params, clientIdOverride) => {
   if (!(params instanceof URLSearchParams)) {
-    throw new Error('prepareTokenRequest expects URLSearchParams');
+    throw ApiError.badRequest('잘못된 토큰 요청입니다.');
   }
-  const fromEnv = process.env.SPOTIFY_CLIENT_ID;
-  const clientId = clientIdOverride || fromEnv || params.get('client_id');
-  if (!clientId) throw new Error('Spotify client_id is missing');
-  if (!params.get('client_id')) params.append('client_id', clientId);
+  const fallbackClientId = process.env.SPOTIFY_CLIENT_ID;
+  const clientId = clientIdOverride || fallbackClientId || params.get('client_id');
+  if (!clientId) {
+    throw ApiError.badRequest('Spotify client_id가 필요합니다.');
+  }
+  if (!params.get('client_id')) {
+    params.append('client_id', clientId);
+  }
+  return {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    clientId,
+  };
+};
 
-  // PKCE에서는 절대 Authorization 헤더를 쓰지 않는다.
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
-  return { headers, clientId };
-}
+const handleSpotifyHttpError = (error, message, options = {}) => {
+  logger.error(message, {
+    status: error.response?.status,
+    data: error.response?.data,
+    error: error.message,
+  });
+  throw new ApiError({
+    message,
+    statusCode: options.statusCode || 502,
+    errorCode: options.errorCode || ERROR_CODES.DEPENDENCY,
+    details: options.details,
+  });
+};
 
-// ------------------------
-// 1️⃣ Spotify Code Exchange (PKCE)
-// ------------------------
-exports.exchangeCode = async (req, res) => {
+const exchangeCode = asyncHandler(async (req, res) => {
+  const { code, code_verifier, redirect_uri, userId, client_id: clientId } = req.body || {};
+  const missing = [
+    ['code', code],
+    ['code_verifier', code_verifier],
+    ['redirect_uri', redirect_uri],
+    ['userId', userId],
+  ]
+    .filter(([, value]) => !value)
+    .map(([field]) => ({ field }));
+
+  if (missing.length) {
+    throw ApiError.badRequest('Spotify 인증에 필요한 값이 누락되었습니다.', missing);
+  }
+
+  const existingToken = await SpotifyTokenModel.getByUser(userId);
+  if (existingToken?.revoked) {
+    logger.info('Exchange code called for revoked token, refreshing with new credentials', { userId });
+  }
+
+  const params = new URLSearchParams();
+  params.append('grant_type', 'authorization_code');
+  params.append('code', code);
+  params.append('redirect_uri', redirect_uri);
+  params.append('code_verifier', code_verifier);
+
+  const { headers } = prepareTokenRequest(params, clientId);
+
+  let tokenResp;
   try {
-    const { code, code_verifier, redirect_uri, userId, client_id } = req.body;
-    if (!code || !code_verifier || !redirect_uri || !userId) {
-      return res.status(400).json({ message: 'code, code_verifier, redirect_uri, userId required' });
-    }
+    tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+  } catch (error) {
+    handleSpotifyHttpError(error, 'Spotify 인증 코드 교환에 실패했습니다.');
+  }
 
-    const existingToken = await SpotifyTokenModel.getByUser(userId);
-    if (existingToken?.revoked) {
-      console.log('[exchangeCode] Existing token marked revoked, will refresh from new exchange.');
-    }
+  const { access_token, refresh_token, expires_in, scope, token_type } = tokenResp.data || {};
 
-    const params = new URLSearchParams();
-    params.append('grant_type', 'authorization_code');
-    params.append('code', code);
-    params.append('redirect_uri', redirect_uri);
-    params.append('code_verifier', code_verifier);
+  if (!refresh_token && !existingToken?.refresh_token_enc) {
+    throw new ApiError({
+      message: 'Spotify가 refresh token을 제공하지 않았습니다. 다시 연결해주세요.',
+      statusCode: 502,
+      errorCode: ERROR_CODES.DEPENDENCY,
+      details: { error: 'MISSING_REFRESH_TOKEN' },
+    });
+  }
 
-    const { headers } = prepareTokenRequest(params, client_id);
+  if (refresh_token) {
+    await SpotifyTokenModel.upsertRefresh(userId, refresh_token, scope, {
+      historyLimit: 5,
+      maxPerHour: 12,
+      clientId,
+    });
+  } else {
+    logger.info('Spotify did not rotate refresh token; keeping existing token', { userId });
+  }
 
-    const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
-    const { access_token, refresh_token, expires_in, scope, token_type } = tokenResp.data;
-    console.log('[exchangeCode] ✅ New token obtained with scope:', scope);
+  const stored = await SpotifyTokenModel.getByUser(userId);
 
-    // refresh_token이 전혀 없고 기존 보관도 없으면 오류
-    if (!refresh_token && !existingToken?.refresh_token_enc) {
-      console.error('[exchangeCode] Spotify did not return a refresh token and no existing token is stored.');
-      return res.status(502).json({
-        message: 'Spotify가 refresh token을 제공하지 않았습니다. Spotify를 다시 연결해주세요.',
-        error: 'MISSING_REFRESH_TOKEN'
-      });
-    }
-
-    // 새 refresh_token 있을 때만 회전/저장
-    if (refresh_token) {
-      await SpotifyTokenModel.upsertRefresh(userId, refresh_token, scope, { historyLimit: 5, maxPerHour: 12, clientId: client_id });
-    } else {
-      console.log('[exchangeCode] No new refresh_token from Spotify; keeping existing one.');
-    }
-
-    const stored = await SpotifyTokenModel.getByUser(userId);
-
-    return res.json({
+  successResponse(res, {
+    data: {
       accessToken: access_token,
       refreshTokenEnc: stored.refresh_token_enc,
       expiresIn: expires_in,
       scope,
       tokenType: token_type,
-      isPremium: false
-    });
-  } catch (err) {
-    console.error('Spotify code exchange failed:', err.response?.data || err.message);
-    return res.status(500).json({ message: 'Spotify code exchange failed' });
+      isPremium: false,
+    },
+    message: 'Spotify 토큰을 발급했습니다.',
+  });
+});
+
+const refreshToken = asyncHandler(async (req, res) => {
+  const { userId, client_id: clientId } = req.body || {};
+  if (!userId) {
+    throw ApiError.badRequest('userId가 필요합니다.', [{ field: 'userId' }]);
   }
-};
 
-// ------------------------
-// 2️⃣ Refresh Token Handler (PKCE)
-// ------------------------
-exports.refreshToken = async (req, res) => {
+  const record = await SpotifyTokenModel.getByUser(userId);
+  if (!record || record.revoked) {
+    throw ApiError.notFound('저장된 Spotify 토큰을 찾을 수 없습니다.');
+  }
+
+  const refreshTokenValue = SpotifyTokenModel.decryptRefresh(record);
+  if (!refreshTokenValue) {
+    throw new ApiError({
+      message: '저장된 refresh token이 없습니다. 다시 연결해주세요.',
+      statusCode: 404,
+      errorCode: ERROR_CODES.NOT_FOUND,
+      details: { error: 'TOKEN_MISSING' },
+    });
+  }
+
+  const params = new URLSearchParams();
+  params.append('grant_type', 'refresh_token');
+  params.append('refresh_token', refreshTokenValue);
+
+  const { headers } = prepareTokenRequest(params, clientId);
+
+  let tokenResp;
   try {
-    const { userId, client_id } = req.body;
-    if (!userId) return res.status(400).json({ message: 'userId required' });
-
-    const record = await SpotifyTokenModel.getByUser(userId);
-    if (!record || record.revoked) return res.status(404).json({ message: 'token not found' });
-
-    const refreshToken = SpotifyTokenModel.decryptRefresh(record);
-    if (!refreshToken) {
-      console.error('[refreshToken] No stored refresh token after decrypt for user:', userId);
-      return res.status(404).json({ message: 'refresh token missing', error: 'TOKEN_MISSING' });
+    tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+  } catch (error) {
+    if (error.response?.status === 400 && error.response?.data?.error === 'invalid_grant') {
+      logger.error('Spotify refresh token revoked by Spotify', { userId });
+      await SpotifyTokenModel.markRevoked(userId);
+      throw new ApiError({
+        message: 'Spotify 연결이 만료되었습니다. 다시 연결해주세요.',
+        statusCode: 401,
+        errorCode: ERROR_CODES.AUTH_REQUIRED,
+        details: { error: 'TOKEN_REVOKED', requiresReauth: true },
+      });
     }
+    handleSpotifyHttpError(error, 'Spotify 토큰 갱신에 실패했습니다.');
+  }
 
-    const params = new URLSearchParams();
-    params.append('grant_type', 'refresh_token');
-    params.append('refresh_token', refreshToken);
+  const { access_token, expires_in, scope, token_type, refresh_token: newRefresh } = tokenResp.data || {};
 
-    const { headers } = prepareTokenRequest(params, client_id);
-
-    const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
-    const { access_token, expires_in, scope, token_type, refresh_token: newRefresh } = tokenResp.data;
-
-    if (newRefresh) {
-      try {
-        await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || record.scope, {
-          historyLimit: 5,
-          maxPerHour: 12,
-          clientId: client_id || record.client_id || process.env.SPOTIFY_CLIENT_ID || null,
-        });
-      } catch (e) {
-        console.warn('Refresh rotation policy violation:', e.message);
-        return res.status(429).json({ message: 'rotation rate exceeded' });
-      }
-    } else {
-      console.log('[refreshToken] No new refresh_token from Spotify; keeping existing one.');
+  if (newRefresh) {
+    try {
+      await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || record.scope, {
+        historyLimit: 5,
+        maxPerHour: 12,
+        clientId: clientId || record.client_id || process.env.SPOTIFY_CLIENT_ID || null,
+      });
+    } catch (error) {
+      logger.warn('Refresh token rotation limit exceeded', { userId, error: error.message });
+      throw new ApiError({
+        message: 'refresh token 교체 빈도가 너무 잦습니다.',
+        statusCode: 429,
+        errorCode: ERROR_CODES.RATE_LIMITED,
+      });
     }
+  } else {
+    logger.debug('Spotify refresh token not rotated', { userId });
+  }
 
-    const updated = await SpotifyTokenModel.getByUser(userId);
-    return res.json({
+  const updated = await SpotifyTokenModel.getByUser(userId);
+
+  successResponse(res, {
+    data: {
       accessToken: access_token,
       refreshTokenEnc: updated.refresh_token_enc,
       expiresIn: expires_in,
       scope: scope || updated.scope,
       tokenType: token_type,
-      version: updated.version
-    });
-  } catch (err) {
-    console.error('Spotify refresh failed', err.response?.data || err.message);
-    if (err.response?.status === 400 && err.response?.data?.error === 'invalid_grant') {
-      console.error('🔴 [refreshToken] Refresh token revoked by Spotify for user:', req.body.userId);
-      try { await SpotifyTokenModel.markRevoked(req.body.userId); } catch (e) { console.error('Failed to mark revoked:', e); }
-      return res.status(401).json({
-        message: 'Spotify 연결이 만료되었습니다. 프로필에서 Spotify를 다시 연결해주세요.',
-        error: 'TOKEN_REVOKED',
-        requiresReauth: true
-      });
-    }
-    return res.status(500).json({ message: 'Spotify refresh failed' });
-  }
-};
+      version: updated.version,
+    },
+    message: 'Spotify 토큰을 갱신했습니다.',
+  });
+});
 
-// ------------------------
-// 3️⃣ Access Token by User (PKCE)
-// ------------------------
 const axiosRef = axios;
-async function getAccessTokenForUser(userId) {
+const getAccessTokenForUser = async (userId) => {
   const record = await SpotifyTokenModel.getByUser(userId);
-  if (!record || record.revoked) throw new Error('No stored refresh token');
-  const refreshToken = SpotifyTokenModel.decryptRefresh(record);
-  if (!refreshToken) throw new Error('No stored refresh token');
+  if (!record || record.revoked) {
+    const error = new ApiError({
+      message: 'Spotify 계정이 연결되어 있지 않습니다.',
+      statusCode: 401,
+      errorCode: ERROR_CODES.AUTH_REQUIRED,
+    });
+    error.code = 'TOKEN_REVOKED';
+    error.requiresReauth = true;
+    throw error;
+  }
+
+  const refreshTokenValue = SpotifyTokenModel.decryptRefresh(record);
+  if (!refreshTokenValue) {
+    const error = new ApiError({
+      message: 'Spotify 계정이 만료되었습니다. 다시 연결해주세요.',
+      statusCode: 401,
+      errorCode: ERROR_CODES.AUTH_REQUIRED,
+    });
+    error.code = 'TOKEN_REVOKED';
+    error.requiresReauth = true;
+    throw error;
+  }
 
   const params = new URLSearchParams();
   params.append('grant_type', 'refresh_token');
-  params.append('refresh_token', refreshToken);
+  params.append('refresh_token', refreshTokenValue);
 
   const { headers } = prepareTokenRequest(params, record?.client_id || process.env.SPOTIFY_CLIENT_ID);
 
   try {
     const tokenResp = await axiosRef.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
     const { access_token, refresh_token: newRefresh, scope } = tokenResp.data || {};
-    // If Spotify rotated refresh token here, persist it
     if (newRefresh) {
       try {
-        const recNow = await SpotifyTokenModel.getByUser(userId);
-        await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || recNow?.scope, {
+        const latest = await SpotifyTokenModel.getByUser(userId);
+        await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || latest?.scope, {
           historyLimit: 5,
           maxPerHour: 12,
-          clientId: recNow?.client_id || process.env.SPOTIFY_CLIENT_ID || null,
+          clientId: latest?.client_id || process.env.SPOTIFY_CLIENT_ID || null,
         });
-      } catch (e) { console.warn('[getAccessTokenForUser] Failed to persist rotated refresh token:', e.message); }
+      } catch (error) {
+        logger.warn('Failed to persist rotated refresh token', { userId, error: error.message });
+      }
     }
     return access_token;
   } catch (error) {
     if (error.response?.status === 400 && error.response?.data?.error === 'invalid_grant') {
-      console.error('🔴 [getAccessTokenForUser] Refresh token revoked by Spotify for user:', userId);
+      logger.error('Spotify revoked refresh token', { userId });
       await SpotifyTokenModel.markRevoked(userId);
-      const revokedError = new Error('Refresh token has been revoked by Spotify. Please reconnect your Spotify account.');
+      const revokedError = new ApiError({
+        message: 'Spotify 계정이 만료되었습니다. 다시 연결해주세요.',
+        statusCode: 401,
+        errorCode: ERROR_CODES.AUTH_REQUIRED,
+        details: { error: 'TOKEN_REVOKED', requiresReauth: true },
+      });
       revokedError.code = 'TOKEN_REVOKED';
       revokedError.requiresReauth = true;
       throw revokedError;
     }
-    throw error;
+    handleSpotifyHttpError(error, 'Spotify 액세스 토큰 발급에 실패했습니다.');
   }
-}
+};
 
-// ------------------------
-// 4️⃣ User Profile & Premium
-// ------------------------
-exports.getMockPremiumStatus = async (req, res) => {
+const getUserIdFromRequest = (req) =>
+  req.headers['x-user-id'] || req.query.userId || req.body?.userId || null;
+
+const getMockPremiumStatus = asyncHandler(async (req, res) => {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) {
+    throw ApiError.badRequest('userId가 필요합니다.');
+  }
+
+  const accessToken = await getAccessTokenForUser(userId);
   try {
-    const userId = req.headers['x-user-id'] || req.query.userId || req.body.userId;
-    if (!userId) return res.status(400).json({ message: 'userId required' });
-
-    const access = await getAccessTokenForUser(userId);
     const meResp = await axiosRef.get(`${SPOTIFY_API_BASE_URL}/me`, {
-      headers: { Authorization: `Bearer ${access}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     const product = meResp.data?.product;
-    res.json({ isPremium: product === 'premium', product });
-  } catch (e) {
-    console.error('Premium status check failed', e.response?.data || e.message);
-    res.status(e.response?.status || 500).json({ message: 'Failed to check premium status' });
-  }
-};
-
-exports.getProfile = async (req, res) => {
-  try {
-    const userId = req.headers['x-user-id'] || req.query.userId || req.body.userId;
-    if (!userId) return res.status(400).json({ message: 'userId required' });
-    const access = await getAccessTokenForUser(userId);
-    const meResp = await axiosRef.get(`${SPOTIFY_API_BASE_URL}/me`, {
-      headers: { Authorization: `Bearer ${access}` }
+    successResponse(res, {
+      data: { isPremium: product === 'premium', product },
     });
-    const { display_name, id, product } = meResp.data;
-    const isPremium = product === 'premium';
-    res.json({ id, display_name, product, isPremium });
-  } catch (e) {
-    console.error('Spotify /me failed', e.response?.data || e.message);
-    res.status(e.response?.status || 500).json({ message: 'Failed to fetch profile' });
+  } catch (error) {
+    handleSpotifyHttpError(error, 'Spotify 프리미엄 상태 확인에 실패했습니다.');
   }
-};
+});
 
-// ------------------------
-// 5️⃣ Revoke (Disconnect)
-// ------------------------
-exports.revoke = async (req, res) => {
-  try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ message: 'userId required' });
-    await SpotifyTokenModel.revoke(userId);
-    res.json({ revoked: true });
-  } catch (e) {
-    res.status(500).json({ message: 'Failed to revoke' });
+const getProfile = asyncHandler(async (req, res) => {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) {
+    throw ApiError.badRequest('userId가 필요합니다.');
   }
+
+  const accessToken = await getAccessTokenForUser(userId);
+  try {
+    const meResp = await axiosRef.get(`${SPOTIFY_API_BASE_URL}/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const { display_name, id, product } = meResp.data || {};
+    successResponse(res, {
+      data: {
+        id,
+        display_name,
+        product,
+        isPremium: product === 'premium',
+      },
+    });
+  } catch (error) {
+    handleSpotifyHttpError(error, 'Spotify 프로필 정보를 가져오지 못했습니다.');
+  }
+});
+
+const revoke = asyncHandler(async (req, res) => {
+  const { userId } = req.body || {};
+  if (!userId) {
+    throw ApiError.badRequest('userId가 필요합니다.');
+  }
+
+  await SpotifyTokenModel.revoke(userId);
+  logger.info('Spotify token revoked by user', { userId });
+  successResponse(res, {
+    data: { revoked: true },
+    message: 'Spotify 연결이 해제되었습니다.',
+  });
+});
+
+module.exports = {
+  exchangeCode,
+  refreshToken,
+  getMockPremiumStatus,
+  getProfile,
+  revoke,
 };

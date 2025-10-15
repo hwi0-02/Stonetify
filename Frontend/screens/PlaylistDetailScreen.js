@@ -1,16 +1,27 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share, Platform } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share } from 'react-native';
 import { Image } from 'expo-image';
-import { useDispatch, useSelector } from 'react-redux';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists } from '../store/slices/playlistSlice';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
+import { addRecentPlaylist } from '../store/slices/recentPlaylistsSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import SongListItem from '../components/SongListItem';
 import * as ApiService from '../services/apiService';
+import { colors as palette, createStyles } from '../utils/ui';
+import {
+  buttonPrimary,
+  card as cardStyle,
+  iconButton as iconButtonStyle,
+  modalOverlay as modalOverlayStyle,
+  pressableHitSlop,
+  textVariants,
+} from '../utils/uiComponents';
 
 const placeholderAlbum = require('../assets/images/placeholder_album.png');
+const COVER_GRID_SIZE = 200;
 
 // 4개 이미지 격자를 렌더링하는 컴포넌트
 const PlaylistHeaderImage = ({ songs }) => {
@@ -45,12 +56,12 @@ const PlaylistHeaderImage = ({ songs }) => {
 };
 
 const PlaylistDetailScreen = ({ route, navigation }) => {
-  const dispatch = useDispatch();
+  const dispatch = useAppDispatch();
   const { playlistId } = route.params;
-  const { currentPlaylist, status, likedPlaylists } = useSelector((state) => state.playlist);
-  const { map: likedSongsMap } = useSelector((state) => state.likedSongs);
-  const { user } = useSelector((state) => state.auth);
-  const spotify = useSelector((state) => state.spotify);
+  const { currentPlaylist, status, likedPlaylists } = useAppSelector((state) => state.playlist);
+  const likedSongsMap = useAppSelector((state) => state.likedSongs.map || {});
+  const { user } = useAppSelector((state) => state.auth);
+  const spotify = useAppSelector((state) => state.spotify);
   
   const [menuVisible, setMenuVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -58,6 +69,28 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [editDescription, setEditDescription] = useState('');
   const [isLiked, setIsLiked] = useState(false);
   const [likeInflight, setLikeInflight] = useState({});
+
+  const songs = currentPlaylist?.songs || [];
+
+  const coverImages = useMemo(() => {
+    if (!currentPlaylist) {
+      return [];
+    }
+    if (Array.isArray(currentPlaylist.cover_images) && currentPlaylist.cover_images.length > 0) {
+      return currentPlaylist.cover_images;
+    }
+    return songs
+      .slice(0, 4)
+      .map((song) => song?.album_cover_url)
+      .filter(Boolean);
+  }, [currentPlaylist, songs]);
+
+  const primaryCoverImage = useMemo(() => {
+    if (coverImages.length > 0) {
+      return coverImages[0];
+    }
+    return currentPlaylist?.cover_image_url || null;
+  }, [coverImages, currentPlaylist?.cover_image_url]);
 
   useEffect(() => {
     if (playlistId) {
@@ -76,6 +109,34 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
   }, [currentPlaylist, likedPlaylists]);
 
+  useEffect(() => {
+    if (!currentPlaylist?.id) {
+      return;
+    }
+
+    dispatch(addRecentPlaylist({
+      id: currentPlaylist.id,
+      title: currentPlaylist.title,
+      description: currentPlaylist.description,
+      cover_images: coverImages,
+      cover_image_url: primaryCoverImage,
+      user: currentPlaylist.user
+        ? {
+            id: currentPlaylist.user.id,
+            display_name: currentPlaylist.user.display_name,
+          }
+        : null,
+    }));
+  }, [
+    dispatch,
+    currentPlaylist?.id,
+    currentPlaylist?.title,
+    currentPlaylist?.description,
+    currentPlaylist?.user,
+    coverImages,
+    primaryCoverImage,
+  ]);
+
 
   
   const handleEditPlaylist = () => {
@@ -84,12 +145,15 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   };
 
   const handlePlayTrack = (song) => {
-    dispatch(playTrackWithPlaylist(song, currentPlaylist.songs));
+    if (!songs.length) {
+      return;
+    }
+    dispatch(playTrackWithPlaylist({ track: song, playlist: songs }));
     navigation.navigate('Player');
   };
 
   const handlePlayAll = async () => {
-    if (!currentPlaylist?.songs?.length) {
+    if (!songs.length) {
       Alert.alert('알림', '플레이리스트에 곡이 없습니다.');
       return;
     }
@@ -104,14 +168,14 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
             postConnect: {
               action: 'playAll',
               // Pass minimal data needed to start playback
-              playlist: currentPlaylist.songs,
+              playlist: songs,
             }
           }
         });
         return;
       }
 
-      await dispatch(playTrackWithPlaylist({ playlist: currentPlaylist.songs }));
+      await dispatch(playTrackWithPlaylist({ playlist: songs }));
       navigation.navigate('Player');
     } catch (error) {
       const message = typeof error === 'string' ? error : error?.message || '재생에 실패했습니다.';
@@ -272,45 +336,57 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   if (status === 'loading' || !currentPlaylist) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#8A2BE2" />
+        <ActivityIndicator size="large" color={palette.accent} />
       </View>
     );
   }
 
   const renderHeader = () => (
-    <LinearGradient colors={['#4c1e6e', '#121212']} style={styles.header}>
-      <PlaylistHeaderImage songs={currentPlaylist.songs || []} />
+    <LinearGradient colors={[palette.accentSecondary, palette.background]} style={styles.header}>
+      <PlaylistHeaderImage songs={songs} />
       <Text style={styles.title}>{currentPlaylist.title}</Text>
       {currentPlaylist.description ? (
         <Text style={styles.description}>{currentPlaylist.description}</Text>
       ) : null}
       <Text style={styles.creator}>
-        By {currentPlaylist.user?.display_name || 'Unknown User'}
+        {`By ${currentPlaylist.user?.display_name || 'Unknown User'}`}
       </Text>
-      
+
       <View style={styles.actionButtons}>
-        {/* 디버깅을 위해 임시로 항상 표시 */}
-        <TouchableOpacity style={styles.menuButton} onPress={() => {
-          console.log('🎯 메뉴 버튼 클릭됨');
-          setMenuVisible(true);
-        }}>
-          <Ionicons name="ellipsis-horizontal" size={24} color="white" />
+        <TouchableOpacity
+          style={styles.menuButton}
+          onPress={() => {
+            console.log('🎯 메뉴 버튼 클릭됨');
+            setMenuVisible(true);
+          }}
+          hitSlop={pressableHitSlop}
+        >
+          <Ionicons name="ellipsis-horizontal" size={24} color={palette.textPrimary} />
         </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.likeButton} onPress={handleToggleLike}>
-          <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#1DB954" : "white"} />
+
+        <TouchableOpacity
+          style={[styles.likeButton, isLiked && styles.iconButtonActive]}
+          onPress={handleToggleLike}
+          hitSlop={pressableHitSlop}
+        >
+          <Ionicons
+            name={isLiked ? 'heart' : 'heart-outline'}
+            size={24}
+            color={isLiked ? palette.accent : palette.textPrimary}
+          />
         </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-          <Ionicons name="share-outline" size={24} color="white" />
+
+        <TouchableOpacity
+          style={styles.shareButton}
+          onPress={handleShare}
+          hitSlop={pressableHitSlop}
+        >
+          <Ionicons name="share-outline" size={24} color={palette.textPrimary} />
         </TouchableOpacity>
-        
-        {currentPlaylist.songs && currentPlaylist.songs.length > 0 && (
-          <TouchableOpacity
-            style={styles.playAllButton}
-            onPress={handlePlayAll}
-          >
-            <Ionicons name="play" size={18} color="#121212" style={styles.playAllIcon} />
+
+        {songs.length > 0 && (
+          <TouchableOpacity style={styles.playAllButton} onPress={handlePlayAll}>
+            <Ionicons name="play" size={20} color={palette.background} />
             <Text style={styles.playAllText}>전체재생</Text>
           </TouchableOpacity>
         )}
@@ -321,13 +397,17 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   return (
     <View style={styles.container}>
       <View style={styles.fixedHeader}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.fixedBackButton}>
-          <Ionicons name="arrow-back" size={24} color="white" />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.fixedBackButton}
+          hitSlop={pressableHitSlop}
+        >
+          <Ionicons name="arrow-back" size={24} color={palette.textPrimary} />
         </TouchableOpacity>
       </View>
       
       <FlatList
-        data={currentPlaylist.songs || []}
+        data={songs}
         keyExtractor={(item, index) => `${playlistId}:${item?.id ?? item?.spotify_id ?? index}`}
         renderItem={({ item, index }) => {
           if (!item) return null;
@@ -347,7 +427,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         showsVerticalScrollIndicator={true}
         ListEmptyComponent={() => (
           <View style={styles.emptyContainer}>
-            <Ionicons name="musical-notes-outline" size={48} color="#404040" />
+            <Ionicons name="musical-notes-outline" size={48} color={palette.textMuted} />
             <Text style={styles.emptyText}>이 플레이리스트에는 아직 곡이 없습니다</Text>
             {isOwner && <Text style={styles.emptySubtext}>곡을 추가해보세요</Text>}
           </View>
@@ -366,18 +446,23 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
           activeOpacity={1}
         >
           <View style={styles.menuModal}>
-            <TouchableOpacity style={styles.menuItem} onPress={handleEditPlaylist}>
-              <Ionicons name="create-outline" size={24} color="#ffffff" />
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleEditPlaylist}
+              hitSlop={pressableHitSlop}
+            >
+              <Ionicons name="create-outline" size={24} color={palette.textPrimary} />
               <Text style={styles.menuItemText}>플레이리스트 수정</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.menuItem, styles.deleteMenuItem]} 
+            <TouchableOpacity
+              style={[styles.menuItem, styles.deleteMenuItem]}
               onPress={() => {
                 console.log('🔴 삭제 메뉴 아이템 클릭됨');
                 handleDeletePlaylist();
               }}
+              hitSlop={pressableHitSlop}
             >
-              <Ionicons name="trash-outline" size={24} color="#ff4444" />
+              <Ionicons name="trash-outline" size={24} color={palette.danger} />
               <Text style={[styles.menuItemText, styles.deleteMenuText]}>플레이리스트 삭제</Text>
             </TouchableOpacity>
           </View>
@@ -394,8 +479,11 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
           <View style={styles.editModal}>
             <View style={styles.editHeader}>
               <Text style={styles.editTitle}>플레이리스트 수정</Text>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#ffffff" />
+              <TouchableOpacity
+                onPress={() => setEditModalVisible(false)}
+                hitSlop={pressableHitSlop}
+              >
+                <Ionicons name="close" size={24} color={palette.textPrimary} />
               </TouchableOpacity>
             </View>
             
@@ -406,7 +494,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
                 value={editTitle}
                 onChangeText={setEditTitle}
                 placeholder="플레이리스트 제목을 입력하세요"
-                placeholderTextColor="#666"
+                placeholderTextColor={palette.textMuted}
               />
               
               <Text style={styles.inputLabel}>설명</Text>
@@ -415,7 +503,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
                 value={editDescription}
                 onChangeText={setEditDescription}
                 placeholder="플레이리스트 설명을 입력하세요"
-                placeholderTextColor="#666"
+                placeholderTextColor={palette.textMuted}
                 multiline={true}
                 numberOfLines={4}
               />
@@ -442,52 +530,47 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const styles = createStyles(({ colors, spacing, typography, radii, elevation }) => ({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: colors.background,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212',
+    backgroundColor: colors.background,
+    gap: spacing.sm,
   },
   fixedHeader: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    height: 80,
+    height: spacing.xxl * 2,
     zIndex: 100,
-    paddingTop: 40,
-    paddingHorizontal: 20,
+    paddingTop: spacing.xxl,
+    paddingHorizontal: spacing.lg,
   },
   fixedBackButton: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 20,
-    padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    ...iconButtonStyle({ size: 44 }),
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   header: {
     alignItems: 'center',
-    paddingTop: 80,
-    paddingBottom: 30,
-    paddingHorizontal: 20,
+    paddingTop: spacing.xxl * 2,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
   },
   playlistImageGrid: {
-    width: 200,
-    height: 200,
-    borderRadius: 8,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
+    width: COVER_GRID_SIZE,
+    height: COVER_GRID_SIZE,
+    borderRadius: radii.lg,
+    marginBottom: spacing.lg,
     overflow: 'hidden',
+    backgroundColor: colors.surface,
+    ...elevation.overlay,
   },
   imageRow: {
     flexDirection: 'row',
@@ -496,188 +579,173 @@ const styles = StyleSheet.create({
   gridImage: {
     flex: 1,
     height: '100%',
-    backgroundColor: '#282828',
-    borderWidth: 0.5,
-    borderColor: '#1a1a1a',
+    backgroundColor: colors.muted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#fff',
+    ...typography.heading,
+    fontSize: 30,
     textAlign: 'center',
   },
   description: {
-    color: '#b3b3b3',
-    fontSize: 15,
+    ...textVariants.subtitle,
     textAlign: 'center',
-    marginTop: 8,
   },
   creator: {
-    color: '#fff',
-    fontSize: 16,
-    marginTop: 12,
-    fontWeight: '600'
+    ...textVariants.subtitle,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
   actionButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
-    gap: 20,
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+    gap: spacing.md,
+    flexWrap: 'wrap',
   },
   menuButton: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-    padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    ...iconButtonStyle({ size: 44 }),
+  },
+  likeButton: {
+    ...iconButtonStyle({ size: 44 }),
+  },
+  shareButton: {
+    ...iconButtonStyle({ size: 44 }),
+  },
+  iconButtonActive: {
+    backgroundColor: 'rgba(29, 185, 84, 0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.accent,
   },
   playAllButton: {
+    ...buttonPrimary({ pill: true }),
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1DB954',
-    borderRadius: 999,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    marginLeft: 12,
-  },
-  playAllIcon: {
-    marginRight: 8,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
   },
   playAllText: {
-    color: '#121212',
-    fontWeight: '700',
+    ...typography.subheading,
+    color: colors.background,
     fontSize: 16,
+    fontWeight: '700',
   },
   emptyContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
   },
   emptyText: {
-    fontSize: 18,
-    color: '#ffffff',
-    marginTop: 16,
+    ...typography.subheading,
     textAlign: 'center',
-    fontWeight: '600',
   },
   emptySubtext: {
-    fontSize: 14,
-    color: '#a7a7a7',
-    marginTop: 8,
+    ...textVariants.subtitle,
     textAlign: 'center',
   },
   modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    ...modalOverlayStyle,
   },
   menuModal: {
-    backgroundColor: '#282828',
-    borderRadius: 12,
-    padding: 8,
-    minWidth: 200,
+    ...cardStyle({ padding: spacing.xs, muted: true, withBorder: false }),
+    minWidth: 220,
+    gap: 0,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    gap: 12,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
   },
   deleteMenuItem: {
-    borderTopWidth: 1,
-    borderTopColor: '#404040',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.divider,
   },
   menuItemText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '500',
+    ...textVariants.subtitle,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
   deleteMenuText: {
-    color: '#ff4444',
+    color: colors.danger,
   },
   editModal: {
-    backgroundColor: '#282828',
-    borderRadius: 12,
-    margin: 20,
+    ...cardStyle({ padding: 0, muted: true }),
     width: '90%',
-    maxWidth: 400,
+    maxWidth: 420,
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.lg,
   },
   editHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#404040',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.divider,
   },
   editTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    ...typography.subheading,
   },
   editForm: {
-    padding: 20,
+    padding: spacing.lg,
+    gap: spacing.md,
   },
   inputLabel: {
-    color: '#ffffff',
-    fontSize: 16,
+    ...textVariants.subtitle,
+    color: colors.textPrimary,
     fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 16,
   },
   textInput: {
-    backgroundColor: '#404040',
-    color: '#ffffff',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: '#555',
+    backgroundColor: colors.surface,
+    color: colors.textPrimary,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   textArea: {
-    height: 100,
+    minHeight: 120,
     textAlignVertical: 'top',
   },
   editActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 24,
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   actionButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    minWidth: 80,
+    borderRadius: radii.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    minWidth: 96,
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#404040',
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.divider,
   },
   saveButton: {
-    backgroundColor: '#1DB954',
+    backgroundColor: colors.accent,
   },
   cancelButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
+    ...textVariants.subtitle,
+    color: colors.textPrimary,
     fontWeight: '600',
   },
   saveButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...textVariants.subtitle,
+    color: colors.background,
+    fontWeight: '700',
   },
-  likeButton: {
-    marginRight: 16,
-  },
-  shareButton: {
-    marginRight: 16,
-  },
-});
+}));
 
 export default PlaylistDetailScreen;

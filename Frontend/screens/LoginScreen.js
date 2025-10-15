@@ -1,45 +1,62 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Alert, Text, TouchableOpacity, ScrollView, Platform } from 'react-native';
-import { useDispatch, useSelector } from 'react-redux';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Alert, Text, TouchableOpacity, ScrollView, Platform, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { login, resetAuthStatus } from '../store/slices/authSlice';
+import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
 import AuthInput from '../components/auth/AuthInput';
 import AuthButton from '../components/auth/AuthButton';
-import { LinearGradient } from 'expo-linear-gradient';
+import { login, resetAuthStatus } from '../store/slices/authSlice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
 import apiService from '../services/apiService';
-import utils from '../utils'; // 공통 ?�틸리티 import
-import Constants from 'expo-constants';
+import { colors as palette, createStyles } from '../utils/ui';
+import { textVariants, pressableHitSlop } from '../utils/uiComponents';
+
+const STATUS = {
+  CHECKING: '서버 연결 확인 중...',
+  CONNECTED: '서버 연결됨',
+  FAILURE: '서버 연결 실패',
+  TUNNEL_WEB: '웹 터널 모드 (모바일 권장)',
+  TUNNEL: '터널 모드',
+};
+
+const gradientColors = [palette.background, '#211E24'];
+
+const getStatusMeta = (status) => {
+  switch (status) {
+    case STATUS.CONNECTED:
+      return { icon: 'checkmark-circle', color: palette.accent };
+    case STATUS.FAILURE:
+      return { icon: 'warning', color: palette.danger };
+    case STATUS.TUNNEL:
+    case STATUS.TUNNEL_WEB:
+      return { icon: 'information-circle', color: '#FFC107' };
+    case STATUS.CHECKING:
+    default:
+      return { icon: 'time', color: '#FFC107' };
+  }
+};
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('서버 연결 확인 중...');
+  const [connectionStatus, setConnectionStatus] = useState(STATUS.CHECKING);
 
-  const dispatch = useDispatch();
-  const { status, error } = useSelector((state) => state.auth);
+  const dispatch = useAppDispatch();
+  const { status, error } = useAppSelector((state) => state.auth);
 
   useEffect(() => {
-  // 터널 모드 감지 함수
-    const isTunnelMode = () => {
+    const detectTunnelMode = () => {
       if (Platform.OS === 'web') {
         const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
-  // HTTPS 터널 모드 감지
         return currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
       }
-      
       const hostUri = Constants.expoConfig?.hostUri;
-      return hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'));
+      return Boolean(hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct')));
     };
 
-  // 터널 모드에서 Mixed Content 오류를 방지하기 위해 연결 테스트 스킵
-    if (isTunnelMode()) {
-      if (Platform.OS === 'web') {
-  setConnectionStatus('웹 터널 모드 (모바일 권장)');
-      } else {
-  setConnectionStatus('터널 모드');
-      }
+    if (detectTunnelMode()) {
+      setConnectionStatus(Platform.OS === 'web' ? STATUS.TUNNEL_WEB : STATUS.TUNNEL);
     } else {
-  // 로컬 모드에서 API 연결 상태 확인
       checkApiConnection();
     }
   }, []);
@@ -47,30 +64,31 @@ const LoginScreen = ({ navigation }) => {
   const checkApiConnection = async () => {
     try {
       await apiService.testConnection();
-      setConnectionStatus('서버 연결됨');
+      setConnectionStatus(STATUS.CONNECTED);
     } catch (error) {
-      setConnectionStatus('서버 연결 실패');
+      setConnectionStatus(STATUS.FAILURE);
     }
   };
 
   useEffect(() => {
     if (status === 'failed') {
-  Alert.alert('로그인 실패', error || '서버와의 연결을 확인해주세요.');
+      Alert.alert('로그인 실패', error || '서버와의 연결을 확인해주세요.');
       dispatch(resetAuthStatus());
     }
   }, [status, error, dispatch]);
 
+  const statusMeta = useMemo(() => getStatusMeta(connectionStatus), [connectionStatus]);
+  const isTunnelWarning = connectionStatus === STATUS.TUNNEL_WEB;
+
   const handleLogin = () => {
     if (!email || !password) {
-  Alert.alert('입력 오류', '이메일과 비밀번호를 모두 입력해주세요.');
+      Alert.alert('입력 오류', '이메일과 비밀번호를 모두 입력해주세요.');
         return;
     }
-    
-  // 터널 모드에서는 연결 상태 확인 건너뛰고 바로 로그인 시도
     const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
     const isTunnelMode = currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
-    
-    if (!isTunnelMode && connectionStatus === '서버 연결 실패') {
+
+    if (!isTunnelMode && connectionStatus === STATUS.FAILURE) {
       Alert.alert(
         '연결 오류', 
         '서버와 연결할 수 없습니다. 네트워크 연결을 확인해주세요.',
@@ -86,132 +104,130 @@ const LoginScreen = ({ navigation }) => {
   };
 
   return (
-    <LinearGradient colors={['#121212', '#211E24']} style={styles.background}>
-      <ScrollView contentContainerStyle={styles.container}>
-          {/* 연결 상태 표시 */}
-          <View style={styles.connectionStatus}>
-            <Ionicons 
-              name={connectionStatus === '서버 연결됨' ? 'checkmark-circle' : 
-                    connectionStatus === '서버 연결 확인 중...' ? 'time' : 'warning'} 
-              size={16} 
-              color={connectionStatus === '서버 연결됨' ? '#4CAF50' : 
-                     connectionStatus === '서버 연결 확인 중...' ? '#FFC107' : '#F44336'} 
-            />
-            <Text style={[styles.connectionText, {
-              color: connectionStatus === '서버 연결됨' ? '#4CAF50' : 
-                     connectionStatus === '서버 연결 확인 중...' ? '#FFC107' : '#F44336'
-            }]}>
-              {connectionStatus}
-            </Text>
-            {connectionStatus !== '서버 연결됨' && connectionStatus !== '웹 터널 모드 (모바일 권장)' && connectionStatus !== '터널 모드' && (
-              <TouchableOpacity onPress={checkApiConnection} style={styles.retryButton}>
-                <Ionicons name="refresh" size={16} color="#1DB954" />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* 터널 모드 안내 */}
-          {connectionStatus === '웹 터널 모드 (모바일 권장)' && (
-            <View style={styles.tunnelWarning}>
-              <Ionicons name="information-circle" size={20} color="#FFC107" />
-              <Text style={styles.tunnelWarningText}>
-                웹 터널 모드에서 보안 제한으로 인해 로그인이 제한될 수 있습니다.{"\n"}
-                모바일에서는 Expo Go 앱으로 QR 코드를 스캔해 접속하세요.
-              </Text>
-            </View>
+    <LinearGradient colors={gradientColors} style={styles.background}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <View style={[styles.connectionStatus, { borderColor: statusMeta.color }]}>
+          <Ionicons name={statusMeta.icon} size={16} color={statusMeta.color} />
+          <Text style={[styles.connectionText, { color: statusMeta.color }]}>{connectionStatus}</Text>
+          {![STATUS.CONNECTED, STATUS.TUNNEL_WEB, STATUS.TUNNEL].includes(connectionStatus) && (
+            <TouchableOpacity
+              onPress={checkApiConnection}
+              style={styles.retryButton}
+              hitSlop={pressableHitSlop}
+            >
+              <Ionicons name="refresh" size={16} color={palette.accent} />
+            </TouchableOpacity>
           )}
-          
-          <Text style={styles.title}>로그인</Text>
-          <AuthInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="이메일"
-              keyboardType="email-address"
-              autoCapitalize="none"
-          />
-          <AuthInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder="비밀번호"
-              secureTextEntry
-          />
-          <AuthButton title="로그인" onPress={handleLogin} loading={status === 'loading'} />
-          <TouchableOpacity style={styles.forgotPasswordLink} onPress={() => navigation.navigate('ResetPassword')}>
-            <Text style={styles.forgotPasswordText}>비밀번호를 잊으셨나요?</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
-              <Text style={styles.switchText}>계정이 없으신가요? 회원가입</Text>
-          </TouchableOpacity>
+        </View>
+
+        {isTunnelWarning && (
+          <View style={styles.tunnelWarning}>
+            <Ionicons name="information-circle" size={20} color="#FFC107" />
+            <Text style={styles.tunnelWarningText}>
+              웹 터널 모드에서 보안 제한으로 인해 로그인이 제한될 수 있습니다.
+              {'\n'}
+              모바일에서는 Expo Go 앱으로 QR 코드를 스캔해 접속하세요.
+            </Text>
+          </View>
+        )}
+
+        <Text style={styles.title}>로그인</Text>
+        <AuthInput
+          value={email}
+          onChangeText={setEmail}
+          placeholder="이메일"
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <AuthInput
+          value={password}
+          onChangeText={setPassword}
+          placeholder="비밀번호"
+          secureTextEntry
+        />
+        <AuthButton title="로그인" onPress={handleLogin} />
+        <TouchableOpacity
+          style={styles.forgotPasswordLink}
+          onPress={() => navigation.navigate('ResetPassword')}
+          hitSlop={pressableHitSlop}
+        >
+          <Text style={styles.forgotPasswordText}>비밀번호를 잊으셨나요?</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('SignUp')} hitSlop={pressableHitSlop}>
+          <Text style={styles.switchText}>계정이 없으신가요? 회원가입</Text>
+        </TouchableOpacity>
       </ScrollView>
     </LinearGradient>
   );
 };
 
-const styles = StyleSheet.create({
-    background: {
-      flex: 1,
-    },
-    container: {
-        flexGrow: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-    },
-    connectionStatus: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 20,
-        padding: 8,
-        borderRadius: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    connectionText: {
-        marginLeft: 6,
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    retryButton: {
-        marginLeft: 8,
-        padding: 4,
-    },
-    tunnelWarning: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        marginBottom: 20,
-        padding: 12,
-        borderRadius: 8,
-        backgroundColor: 'rgba(255, 193, 7, 0.1)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 193, 7, 0.3)',
-        maxWidth: '100%',
-    },
-    tunnelWarningText: {
-        marginLeft: 8,
-        fontSize: 13,
-        color: '#FFC107',
-        lineHeight: 18,
-        flex: 1,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        color: '#fff',
-        marginBottom: 40,
-    },
-    switchText: {
-        color: '#8A2BE2', // 보라???�스??
-        marginTop: 10,
-        fontSize: 16,
+const styles = createStyles(({ colors, spacing, typography, radii }) => ({
+  background: {
+    flex: 1,
+  },
+  container: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xxl,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
+  },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: colors.surface,
+  },
+  connectionText: {
+    ...textVariants.subtitle,
+    fontSize: 13,
+  },
+  retryButton: {
+    marginLeft: spacing.xs,
+    padding: spacing.xs,
+  },
+  tunnelWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: 'rgba(255, 193, 7, 0.12)',
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 193, 7, 0.4)',
+  },
+  tunnelWarningText: {
+    ...textVariants.subtitle,
+    color: '#FFC107',
+    flex: 1,
+    lineHeight: 18,
+  },
+  title: {
+    ...typography.heading,
+    fontSize: 30,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.lg,
   },
   forgotPasswordLink: {
-    marginTop: 15,
-    marginBottom: 10,
+    marginTop: spacing.md,
   },
   forgotPasswordText: {
-    color: '#1DB954',
-    fontSize: 14,
+    ...textVariants.subtitle,
+    color: palette.accent,
     textAlign: 'center',
   },
-});
+  switchText: {
+    ...textVariants.subtitle,
+    color: palette.accentSecondary,
+    marginTop: spacing.sm,
+    fontWeight: '600',
+  },
+}));
 
 export default LoginScreen;

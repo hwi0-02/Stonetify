@@ -1,56 +1,104 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import PlaylistCard from '../playlists/PlaylistCard'; // Post에 포함된 플레이리스트를 보여주기 위해 재사용
+import React, { useMemo } from 'react';
+import PropTypes from 'prop-types';
+import { View, Text, TouchableOpacity } from 'react-native';
+import PlaylistCard from '../playlists/PlaylistCard';
+import { createStyles } from '../../utils/ui';
+import { card as cardStyle, textVariants, pressableHitSlop } from '../../utils/uiComponents';
 
-// 홈 화면 피드에 표시될 개별 포스트 컴포넌트
+const styles = createStyles(({ colors, spacing, typography }) => ({
+  container: {
+    ...cardStyle({ padding: spacing.lg, interactive: false }),
+    gap: spacing.sm,
+  },
+  header: {
+    marginBottom: spacing.xs,
+  },
+  userName: {
+    ...typography.subheading,
+    fontSize: 16,
+  },
+  contentTitle: {
+    ...typography.subheading,
+    fontSize: 15,
+  },
+  contentDescription: {
+    ...typography.body,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  footer: {
+    marginTop: spacing.sm,
+  },
+  likeButton: {
+    ...textVariants.subtitle,
+    color: colors.accent,
+    fontWeight: '700',
+  },
+}));
+
 const PostItem = ({ post, onLike, onPlaylistPress }) => {
+  const { title, description } = useMemo(() => {
+    const content = post?.content;
+    if (!content) return { title: '', description: '' };
+    if (typeof content === 'string') {
+      return { title: '', description: content };
+    }
+    if (typeof content === 'object') {
+      return {
+        title: content.title || '',
+        description: content.description || '',
+      };
+    }
+    return { title: '', description: String(content) };
+  }, [post?.content]);
+
+  const likesCount = typeof post?.likesCount === 'number'
+    ? post.likesCount
+    : post?.postLikingUsers?.length || 0;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.userName}>{post.user?.display_name || 'Unknown User'}</Text>
+        <Text style={styles.userName}>{post?.user?.display_name || '알 수 없는 사용자'}</Text>
       </View>
-      <Text style={styles.content}>{post.content}</Text>
-      {post.playlist && (
-         <PlaylistCard playlist={post.playlist} onPress={() => onPlaylistPress(post.playlist.id)} />
-      )}
+      {title ? <Text style={styles.contentTitle}>{title}</Text> : null}
+      {description ? <Text style={styles.contentDescription}>{description}</Text> : null}
+      {post?.playlist ? (
+        <PlaylistCard
+          playlist={post.playlist}
+          onPress={onPlaylistPress ? () => onPlaylistPress(post.playlist) : undefined}
+          showActions={false}
+        />
+      ) : null}
       <View style={styles.footer}>
-        <TouchableOpacity onPress={onLike}>
-          {/* 좋아요 여부에 따라 아이콘 변경 로직 추가 필요 */}
-          <Text style={styles.likeButton}>❤️ {post.postLikingUsers?.length || 0} Likes</Text>
+        <TouchableOpacity onPress={onLike} hitSlop={pressableHitSlop}>
+          <Text style={styles.likeButton}>❤️ {likesCount.toLocaleString()} Likes</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  header: {
-    marginBottom: 10,
-  },
-  userName: {
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  content: {
-    fontSize: 14,
-    marginBottom: 15,
-    lineHeight: 20,
-  },
-  footer: {
-    marginTop: 10,
-  },
-  likeButton: {
-    color: '#1DB954',
-    fontWeight: 'bold',
-  }
-});
+PostItem.propTypes = {
+  post: PropTypes.shape({
+    content: PropTypes.oneOfType([
+      PropTypes.string,
+      PropTypes.object,
+    ]),
+    likesCount: PropTypes.number,
+    postLikingUsers: PropTypes.array,
+    playlist: PropTypes.object,
+    user: PropTypes.shape({
+      display_name: PropTypes.string,
+    }),
+  }).isRequired,
+  onLike: PropTypes.func,
+  onPlaylistPress: PropTypes.func,
+};
+
+PostItem.defaultProps = {
+  onLike: undefined,
+  onPlaylistPress: undefined,
+};
 
 export default PostItem;
