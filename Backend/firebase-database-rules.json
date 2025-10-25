@@ -1,0 +1,73 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      ".indexOn": [
+        "email",
+        "display_name",
+        "created_at"
+      ]
+    },
+    "playlists": {
+      ".indexOn": [
+        "user_id",
+        "created_at",
+        "is_public",
+        "title"
+      ]
+    },
+    "posts": {
+      ".indexOn": [
+        "user_id",
+        "playlist_id",
+        "created_at"
+      ]
+    },
+    "playlist_songs": {
+      ".indexOn": [
+        "playlist_id",
+        "song_id",
+        "position"
+      ]
+    },
+    "follows": {
+      ".indexOn": [
+        "follower_id",
+        "following_id"
+      ]
+    },
+    "liked_playlists": {
+      ".indexOn": [
+        "user_id",
+        "playlist_id",
+        "created_at"
+      ]
+    },
+    "post_likes": {
+      ".indexOn": [
+        "user_id",
+        "post_id"
+      ]
+    },
+    "song_likes": {
+      ".indexOn": [
+        "user_id",
+        "song_id"
+      ]
+    },
+    "playback_history": {
+      ".indexOn": [
+        "user_id",
+        "track_id",
+        "played_at"
+      ]
+    },
+    "spotify_tokens": {
+      ".indexOn": [
+        "user_id",
+        "expires_at"
+      ]
+    }
+  }
+}
