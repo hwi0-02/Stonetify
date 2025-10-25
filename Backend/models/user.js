@@ -46,6 +46,23 @@ class User {
     return user || null;
   }
 
+  static async findByDisplayName(displayName) {
+    console.log('🔍 findByDisplayName 호출됨:', displayName);
+    const allUsers = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.USERS);
+    console.log('📋 모든 사용자 수:', allUsers.length);
+    
+    // user.email 대신 user.display_name으로 검색
+    const user = allUsers.find(user => user.display_name === displayName); 
+    
+    if (user) {
+      console.log('✅ 닉네임으로 사용자 찾음:', { id: user.id, display_name: user.display_name });
+    } else {
+      console.log('❌ 닉네임으로 사용자를 찾을 수 없음:', displayName);
+    }
+    
+    return user || null;
+  }
+
   static async update(id, userData) {
     const updateData = {
       ...userData,

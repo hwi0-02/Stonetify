@@ -24,11 +24,14 @@ const SignUpScreen = ({ navigation }) => {
       if (error.includes('이미 존재하는 사용자입니다.')) {
         title = '이메일 중복';
         message = '이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.';
-      } 
-
-      Alert.alert(title, message); // 맞춤형 메시지를 띄웁니다.
-      dispatch(resetAuthStatus());
-    }
+      }
+      else if (error.includes('이미 사용 중인 닉네임입니다.')) {
+        title = '닉네임 중복';
+        message = '이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해주세요.';
+      }
+       Alert.alert(title, message); // 맞춤형 메시지를 띄웁니다.
+      dispatch(resetAuthStatus());
+    }
   }, [status, error, dispatch]);
 
   const handleSignUp = () => {

@@ -246,8 +246,8 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new Error(validationErrors.join(' '));
     }
 
-    // 사용자 중복 검사
-    console.log('🔍 사용자 중복 검사...');
+    // 이메일 중복 검사
+    console.log('🔍 이메일 중복 검사...');
     const userExists = await User.findByEmail(email);
     if (userExists) {
         console.log('❌ 이미 존재하는 사용자:', email);
@@ -255,6 +255,17 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new Error('이미 존재하는 사용자입니다.');
     }
 
+    console.log('🔍 닉네임 중복 검사...');
+    // (참고: User 모델에 findByDisplayName이 구현되어 있어야 합니다.)
+    // (아마 User.findByEmail과 비슷하게 구현되어 있을 것입니다.)
+    const displayNameExists = await User.findByDisplayName(display_name);
+    if (displayNameExists) {
+        console.log('❌ 이미 사용 중인 닉네임:', display_name);
+        res.status(400); // 400 또는 409
+        // 이 메시지가 authSlice를 통해 프론트엔드로 전달됩니다.
+        throw new Error('이미 사용 중인 닉네임입니다.');
+    }
+    
     // 비밀번호 해싱
     console.log('🔒 비밀번호 해싱...');
     const salt = await bcrypt.genSalt(10);
