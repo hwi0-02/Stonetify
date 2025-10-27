@@ -1,0 +1,8 @@
+구현 기능
+1. 이메일 형식 확인
+2. 이메일, 닉네임 중복 확인
+
+수정 파일
+SignUpScreen.js
+user.js
+userController.js
