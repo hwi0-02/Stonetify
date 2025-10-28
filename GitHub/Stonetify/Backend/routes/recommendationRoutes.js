@@ -4,6 +4,8 @@ const {
     getRecommendedPlaylists,
     getSimilarUsers,
     getTrendingPlaylists,
+    getGeminiRecommendations,
+    postRecommendationFeedback,
 } = require('../controllers/recommendationController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -15,5 +17,11 @@ router.get('/users', protect, getSimilarUsers);
 
 // 트렌딩 플레이리스트
 router.get('/trending', getTrendingPlaylists);
+
+// Gemini 기반 AI 추천
+router.get('/gemini', protect, getGeminiRecommendations);
+
+// 추천 피드백 저장
+router.post('/feedback', protect, postRecommendationFeedback);
 
 module.exports = router;

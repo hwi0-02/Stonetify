@@ -44,6 +44,39 @@ class PlaybackHistoryModel {
       updated_at: now
     });
   }
+
+  /**
+   * 사용자 재생 기록을 최근 순으로 반환한다.
+   * @param {string} userId
+   * @param {Object} [options]
+   * @param {number} [options.limit=50]
+   * @returns {Promise<Array>}
+   */
+  static async findByUserId(userId, { limit = 50 } = {}) {
+    if (!userId) return [];
+
+    const records = await RealtimeDBHelpers.queryDocuments(
+      COLLECTIONS.PLAYBACK_HISTORY,
+      'user_id',
+      userId
+    );
+
+    if (!records || records.length === 0) {
+      return [];
+    }
+
+    const normalizedTimestamp = (record) =>
+      record.started_at || record.created_at || record.updated_at || null;
+
+    const sorted = records
+      .map((record) => ({
+        ...record,
+        played_at: normalizedTimestamp(record),
+      }))
+      .sort((a, b) => (b.played_at || 0) - (a.played_at || 0));
+
+    return typeof limit === 'number' && limit > 0 ? sorted.slice(0, limit) : sorted;
+  }
 }
 
 module.exports = PlaybackHistoryModel;

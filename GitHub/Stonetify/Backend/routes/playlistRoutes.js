@@ -20,6 +20,7 @@ const {
     getMyLikedSongs,
     getPopularPlaylists,
     getRandomPlaylists,
+    savePlaylistToLibrary,
 } = require('../controllers/playlistController');
 
 // @/api/playlists/
@@ -42,6 +43,9 @@ router.get('/search', searchPlaylists);
 
 // 플레이리스트 좋아요/취소 토글
 router.post('/:playlistId/like', protect, likePlaylist);
+
+// 다른 사용자 플레이리스트 담기
+router.post('/:playlistId/save', protect, savePlaylistToLibrary);
 
 // 플레이리스트 생성
 router.post('/', protect, createPlaylist);

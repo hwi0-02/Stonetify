@@ -26,25 +26,46 @@ import {
   createShareLinkAsync,
   fetchRecommendedPlaylists,
   fetchForYouPlaylists,
+  fetchGeminiRecommendations,
+  hydrateGeminiRecommendations,
+  sendRecommendationFeedback,
+  fetchPopularPlaylists,
 } from '../store/slices/playlistSlice';
 import PostCard from '../components/PostCard';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
 import PopularChart from '../components/home/PopularChart'; // 추가
-import { fetchPopularPlaylists } from '../store/slices/playlistSlice'; // 추가
 
 const logoPurple = require('../assets/images/logo_purple.png');
 
 const { width: screenWidth } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 const isMobile = !isWeb && screenWidth < 768;
+const AI_CACHE_TTL_MS = 5 * 60 * 1000; // 5분 캐시 유지
 
 const HomeScreen = ({ navigation }) => {
   const dispatch = useDispatch();
   const { posts = [], status: postStatus } = useSelector((state) => state.post);
   const { user } = useSelector((state) => state.auth);
-  const { userPlaylists, recommendedPlaylists, forYouPlaylists, popularPlaylists } = useSelector((state) => state.playlist);
+  const { 
+    userPlaylists, 
+    recommendedPlaylists, 
+    forYouPlaylists, 
+    popularPlaylists,
+    aiRecommendations,
+  } = useSelector((state) => state.playlist);
   const [refreshing, setRefreshing] = useState(false);
   const [chartPeriod, setChartPeriod] = useState('weekly');
+  const isAiLoading = aiRecommendations?.status === 'loading';
+  const hasAiTracks = Array.isArray(aiRecommendations?.tracks) && aiRecommendations.tracks.length > 0;
+  const aiLastUpdatedAt = aiRecommendations?.lastUpdatedAt;
+  const aiLastUpdatedLabel = useMemo(() => {
+    if (!aiLastUpdatedAt) return '';
+    const date = new Date(aiLastUpdatedAt);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }, [aiLastUpdatedAt]);
+  const showAiSection = hasAiTracks || isAiLoading;
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -61,9 +82,32 @@ const HomeScreen = ({ navigation }) => {
       dispatch(fetchLikedPlaylists()),
       dispatch(fetchRecommendedPlaylists()),
       dispatch(fetchForYouPlaylists()),
-      dispatch(fetchPopularPlaylists({ period: chartPeriod, limit: 3 })),
     ]).catch(err => console.error('홈 화면 데이터 로딩 실패:', err));
+  }, [dispatch]);
+
+  useEffect(() => {
+    dispatch(fetchPopularPlaylists({ period: chartPeriod, limit: 3 }));
   }, [dispatch, chartPeriod]);
+
+  useEffect(() => {
+    let isActive = true;
+    dispatch(hydrateGeminiRecommendations()).then((action) => {
+      if (!isActive) return;
+      const cachedTimestamp = hydrateGeminiRecommendations.fulfilled.match(action)
+        ? action.payload?.lastUpdatedAt
+        : null;
+      const parsedTime = cachedTimestamp ? new Date(cachedTimestamp).getTime() : NaN;
+      const isCacheFresh =
+        !Number.isNaN(parsedTime) && Date.now() - parsedTime <= AI_CACHE_TTL_MS;
+      if (!isCacheFresh) {
+        dispatch(fetchGeminiRecommendations({}));
+      }
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [dispatch]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -73,9 +117,14 @@ const HomeScreen = ({ navigation }) => {
       dispatch(fetchLikedPlaylists()),
       dispatch(fetchRecommendedPlaylists()),
       dispatch(fetchForYouPlaylists()),
+      dispatch(fetchPopularPlaylists({ period: chartPeriod, limit: 3 })),
     ])
+      .catch(err => console.error('홈 화면 데이터 새로고침 실패:', err))
       .finally(() => setRefreshing(false));
-  }, [dispatch]);
+    if (!isAiLoading) {
+      dispatch(fetchGeminiRecommendations({}));
+    }
+  }, [dispatch, chartPeriod, isAiLoading]);
 
   const handlePlaylistPress = (playlist) => {
     if (playlist?.id) {
@@ -176,6 +225,68 @@ const HomeScreen = ({ navigation }) => {
           onItemPress={handlePlaylistPress}
           onSeeAll={() => navigation.navigate('Profile')}
         />
+
+        {/* AI 추천 섹션 */}
+        {showAiSection && (
+          <View style={styles.aiRecommendationSection}>
+            <View style={styles.aiTitleContainer}>
+              <Ionicons name="sparkles" size={20} color="#1DB954" />
+              <Text style={styles.sectionTitle}>AI가 추천하는 플레이리스트</Text>
+            </View>
+            
+            {aiRecommendations.summary && (
+              <Text style={styles.aiSummary}>{aiRecommendations.summary}</Text>
+            )}
+            
+            {hasAiTracks ? (
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.aiTracksContainer}
+              >
+                {aiRecommendations.tracks.map((track, index) => (
+                  <TouchableOpacity
+                    key={track.id || index}
+                    style={styles.aiTrackCard}
+                    onPress={() => {
+                      if (track.playlist?.id) {
+                        handlePlaylistPress(track.playlist);
+                      }
+                    }}
+                  >
+                    <Image
+                      source={{ uri: track.album_cover_url }}
+                      style={styles.aiTrackImage}
+                      contentFit="cover"
+                    />
+                    <View style={styles.aiTrackInfo}>
+                      <Text style={styles.aiTrackTitle} numberOfLines={1}>
+                        {track.title}
+                      </Text>
+                      <Text style={styles.aiTrackArtist} numberOfLines={1}>
+                        {track.artist}
+                      </Text>
+                      {track.reason && (
+                        <Text style={styles.aiTrackReason} numberOfLines={2}>
+                          {track.reason}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.aiEmptyState}>
+                <ActivityIndicator size="small" color="#1DB954" />
+                <Text style={styles.aiEmptyText}>추천을 불러오는 중...</Text>
+              </View>
+            )}
+            
+            {aiRecommendations.followUpQuestion && (
+              <Text style={styles.aiFollowUp}>{aiRecommendations.followUpQuestion}</Text>
+            )}
+          </View>
+        )}
 
         <PopularChart
           title="Best 플레이리스트"
@@ -345,6 +456,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#b3b3b3',
     paddingHorizontal: 32,
+  },
+  // AI 추천 스타일
+  aiRecommendationSection: {
+    marginBottom: 24,
+    paddingHorizontal: 16,
+    marginTop: 10,
+  },
+  aiTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  aiSummary: {
+    color: '#b3b3b3',
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  aiTracksContainer: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  aiTrackCard: {
+    width: 180,
+    backgroundColor: '#282828',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginRight: 12,
+  },
+  aiTrackImage: {
+    width: '100%',
+    height: 180,
+  },
+  aiTrackInfo: {
+    padding: 12,
+  },
+  aiTrackTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  aiTrackArtist: {
+    color: '#b3b3b3',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  aiTrackReason: {
+    color: '#1DB954',
+    fontSize: 11,
+    lineHeight: 14,
+    fontStyle: 'italic',
+  },
+  aiFollowUp: {
+    color: '#b3b3b3',
+    fontSize: 13,
+    fontStyle: 'italic',
+    paddingHorizontal: 16,
+    marginTop: 12,
+  },
+  aiEmptyState: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  aiEmptyText: {
+    color: '#b3b3b3',
+    fontSize: 13,
+    marginLeft: 8,
   },
 });
 

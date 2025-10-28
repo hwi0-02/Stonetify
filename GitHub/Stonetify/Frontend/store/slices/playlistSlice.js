@@ -1,5 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiService from '../../services/apiService';
+
+const AI_RECOMMENDATION_CACHE_KEY = 'stonetify.ai.recommendations.cache';
 
 const initialState = {
   userPlaylists: [],
@@ -10,6 +13,15 @@ const initialState = {
   currentPlaylist: null,
   status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
   error: null,
+  // AI 추천 상태
+  aiRecommendations: {
+    tracks: [],
+    summary: '',
+    followUpQuestion: '',
+    status: 'idle',
+    error: null,
+    lastUpdatedAt: null,
+  },
 };
 
 // 내 플레이리스트 목록 가져오기 (홈 화면용)
@@ -172,6 +184,108 @@ export const fetchForYouPlaylists = createAsyncThunk(
   }
 );
 
+export const savePlaylistAsync = createAsyncThunk(
+  'playlist/savePlaylist',
+  async (playlistId, { rejectWithValue }) => {
+    console.log('🔵 [Redux Thunk] savePlaylistAsync 시작:', playlistId);
+    try {
+      console.log('📤 [Redux Thunk] apiService.savePlaylist 호출 중...');
+      const result = await apiService.savePlaylist(playlistId);
+      console.log('✅ [Redux Thunk] apiService.savePlaylist 성공:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ [Redux Thunk] apiService.savePlaylist 실패:', error);
+      console.error('❌ [Redux Thunk] 오류 세부정보:', {
+        message: error?.message,
+        response: error?.response,
+        responseData: error?.response?.data,
+        responseStatus: error?.response?.status,
+        responseStatusText: error?.response?.statusText,
+        errorType: typeof error,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      });
+      
+      const message = error?.response?.data?.message || error?.message || '플레이리스트를 담는 중 문제가 발생했습니다.';
+      console.log('🔴 [Redux Thunk] rejectWithValue 호출:', message);
+      return rejectWithValue(message);
+    }
+  }
+);
+
+// Gemini AI 추천 가져오기
+export const fetchGeminiRecommendations = createAsyncThunk(
+  'playlist/fetchGeminiRecommendations',
+  async ({ mood, activity } = {}, { rejectWithValue }) => {
+    try {
+      const result = await apiService.getGeminiRecommendations({ mood, activity });
+      const payload = {
+        tracks: result?.tracks || [],
+        summary: result?.summary || '',
+        followUpQuestion: result?.followUpQuestion || '',
+        lastUpdatedAt: new Date().toISOString(),
+      };
+      try {
+        await AsyncStorage.setItem(AI_RECOMMENDATION_CACHE_KEY, JSON.stringify(payload));
+      } catch (storageError) {
+        console.warn('[PlaylistSlice] Failed to cache AI recommendations:', storageError);
+      }
+      return payload;
+    } catch (error) {
+      const status = error.response?.status;
+      const serverMessage = error.response?.data?.message;
+      const detail = status ? `[${status}] ${serverMessage || error.message || '요청 실패'}` : (serverMessage || error.message || 'AI 추천을 불러오는데 실패했습니다.');
+      console.warn('[PlaylistSlice] Gemini recommendation failed:', {
+        status,
+        serverMessage,
+        data: error.response?.data,
+        message: error.message,
+      });
+      return rejectWithValue(detail);
+    }
+  }
+);
+
+export const hydrateGeminiRecommendations = createAsyncThunk(
+  'playlist/hydrateGeminiRecommendations',
+  async (_, { rejectWithValue }) => {
+    try {
+      const cached = await AsyncStorage.getItem(AI_RECOMMENDATION_CACHE_KEY);
+      if (!cached) return null;
+      return JSON.parse(cached);
+    } catch (error) {
+      console.warn('[PlaylistSlice] Failed to hydrate AI recommendations:', error);
+      return rejectWithValue(null);
+    }
+  }
+);
+
+// 추천 피드백 전송
+export const sendRecommendationFeedback = createAsyncThunk(
+  'playlist/sendRecommendationFeedback',
+  async ({ trackId, action, context }, { rejectWithValue }) => {
+    try {
+      return await apiService.postRecommendationFeedback({ trackId, action, context });
+    } catch (error) {
+      return rejectWithValue('피드백 전송에 실패했습니다.');
+    }
+  }
+);
+
+export const addSongToPlaylistThunk = createAsyncThunk(
+  'playlist/addSongToPlaylist',
+  async ({ playlistId, songData }, { rejectWithValue }) => {
+    try {
+      const response = await apiService.addSongToPlaylist(playlistId, songData);
+      return { playlistId, response };
+    } catch (error) {
+      return rejectWithValue({
+        message: error.response?.data?.message || error.message || '곡 추가에 실패했습니다.',
+        status: error.response?.status || null,
+      });
+    }
+  }
+);
+
 
 const playlistSlice = createSlice({
   name: 'playlist',
@@ -241,6 +355,52 @@ const playlistSlice = createSlice({
       .addCase(fetchRecommendedPlaylists.rejected, (state, action) => {
         state.error = action.payload;
       })
+      .addCase(addSongToPlaylistThunk.pending, (state) => {
+        state.error = null;
+      })
+      .addCase(addSongToPlaylistThunk.fulfilled, (state, action) => {
+        const { playlistId, response } = action.payload || {};
+        const updatedPlaylist =
+          response?.playlist ||
+          response?.data?.playlist ||
+          null;
+
+        if (updatedPlaylist) {
+          if (state.currentPlaylist && state.currentPlaylist.id === updatedPlaylist.id) {
+            state.currentPlaylist = { ...state.currentPlaylist, ...updatedPlaylist };
+          }
+          if (Array.isArray(state.userPlaylists)) {
+            state.userPlaylists = state.userPlaylists.map((playlist) =>
+              playlist.id === updatedPlaylist.id ? { ...playlist, ...updatedPlaylist } : playlist
+            );
+          }
+          return;
+        }
+
+        const newSong =
+          response?.song ||
+          response?.data?.song ||
+          response;
+
+        if (!newSong) return;
+
+        if (state.currentPlaylist && state.currentPlaylist.id === playlistId) {
+          if (!Array.isArray(state.currentPlaylist.songs)) {
+            state.currentPlaylist.songs = [];
+          }
+          const exists = state.currentPlaylist.songs.some(
+            (song) =>
+              (song.id && newSong.id && song.id === newSong.id) ||
+              (song.spotify_id && newSong.spotify_id && song.spotify_id === newSong.spotify_id)
+          );
+          if (!exists) {
+            state.currentPlaylist.songs = [...state.currentPlaylist.songs, newSong];
+          }
+        }
+      })
+      .addCase(addSongToPlaylistThunk.rejected, (state, action) => {
+        state.error = action.payload?.message || action.error?.message || '곡 추가에 실패했습니다.';
+      })
       .addCase(fetchForYouPlaylists.fulfilled, (state, action) => {
         state.forYouPlaylists = Array.isArray(action.payload) ? action.payload : [];
       })
@@ -307,10 +467,21 @@ const playlistSlice = createSlice({
         }
         // 좋아요한 플레이리스트 목록 업데이트
         if (liked) {
-          // 좋아요 추가
-          const playlist = state.userPlaylists.find(p => p.id === playlistId);
-          if (playlist && !state.likedPlaylists.find(p => p.id === playlistId)) {
-            state.likedPlaylists.push(playlist);
+          const alreadyInList = state.likedPlaylists.some(p => p.id === playlistId);
+          if (!alreadyInList) {
+            const playlistFromUser = state.userPlaylists.find(p => p.id === playlistId);
+            const playlistSource =
+              playlistFromUser ||
+              (state.currentPlaylist && state.currentPlaylist.id === playlistId
+                ? state.currentPlaylist
+                : null);
+
+            if (playlistSource) {
+              const { songs, ...rest } = playlistSource;
+              state.likedPlaylists.unshift({ ...rest });
+            } else {
+              state.likedPlaylists.unshift({ id: playlistId, liked: true });
+            }
           }
         } else {
           // 좋아요 제거
@@ -347,6 +518,75 @@ const playlistSlice = createSlice({
       .addCase(fetchPopularPlaylists.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload;
+      })
+      .addCase(savePlaylistAsync.pending, (state) => {
+        state.error = null;
+      })
+      .addCase(savePlaylistAsync.fulfilled, (state, action) => {
+        if (!action.payload) return;
+
+        const originId =
+          action.payload.saved_from_playlist_id ??
+          action.meta?.arg ??
+          null;
+
+        const savedPlaylist = {
+          ...action.payload,
+          saved_from_playlist_id: originId,
+        };
+
+        if (!Array.isArray(state.userPlaylists)) {
+          state.userPlaylists = [savedPlaylist];
+          return;
+        }
+
+        const exists = state.userPlaylists.some(
+          (playlist) =>
+            playlist.id === savedPlaylist.id ||
+            (originId && playlist.saved_from_playlist_id === originId)
+        );
+        if (!exists) {
+          state.userPlaylists.unshift(savedPlaylist);
+        }
+      })
+      .addCase(savePlaylistAsync.rejected, (state, action) => {
+        state.error = action.payload;
+      })
+      // Gemini AI 추천
+      .addCase(fetchGeminiRecommendations.pending, (state) => {
+        state.aiRecommendations.status = 'loading';
+        state.aiRecommendations.error = null;
+      })
+      .addCase(fetchGeminiRecommendations.fulfilled, (state, action) => {
+        state.aiRecommendations.status = 'succeeded';
+        state.aiRecommendations.tracks = action.payload.tracks || [];
+        state.aiRecommendations.summary = action.payload.summary || '';
+        state.aiRecommendations.followUpQuestion = action.payload.followUpQuestion || '';
+        state.aiRecommendations.lastUpdatedAt = action.payload.lastUpdatedAt || new Date().toISOString();
+      })
+      .addCase(fetchGeminiRecommendations.rejected, (state, action) => {
+        state.aiRecommendations.status = 'failed';
+        state.aiRecommendations.error = action.payload;
+      })
+      .addCase(hydrateGeminiRecommendations.fulfilled, (state, action) => {
+        if (!action.payload) return;
+        state.aiRecommendations.tracks = action.payload.tracks || [];
+        state.aiRecommendations.summary = action.payload.summary || '';
+        state.aiRecommendations.followUpQuestion = action.payload.followUpQuestion || '';
+        state.aiRecommendations.lastUpdatedAt = action.payload.lastUpdatedAt || null;
+        state.aiRecommendations.status = (action.payload.tracks?.length || 0) > 0 ? 'succeeded' : 'idle';
+        state.aiRecommendations.error = null;
+      })
+      .addCase(hydrateGeminiRecommendations.rejected, (state) => {
+        // Ignore cache hydration failures to avoid affecting UX
+      })
+      // 추천 피드백 전송
+      .addCase(sendRecommendationFeedback.fulfilled, (state) => {
+        // 피드백 전송 성공 시 특별한 상태 변경 없음
+      })
+      .addCase(sendRecommendationFeedback.rejected, (state, action) => {
+        // 피드백 실패는 조용히 처리 (사용자 경험에 영향 최소화)
+        console.warn('Recommendation feedback failed:', action.payload);
       });
   },
 });

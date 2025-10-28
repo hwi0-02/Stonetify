@@ -3,13 +3,14 @@ const LikedPlaylist = require('./liked_playlists');
 
 class Playlist {
   static async create(playlistData) {
-    const { user_id, title, description, is_public } = playlistData;
+    const { user_id, title, description, is_public, saved_from_playlist_id } = playlistData;
     
     const playlist = {
       user_id,
       title,
       description: description || '',
       is_public: is_public !== undefined ? is_public : true,
+      saved_from_playlist_id: saved_from_playlist_id || null,
       created_at: Date.now(),
       updated_at: Date.now()
     };

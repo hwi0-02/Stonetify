@@ -1,14 +1,14 @@
-import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TextInput, FlatList, SectionList, TouchableOpacity, Modal, Alert, ActivityIndicator } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
-import { useNavigation, useRoute } from '@react-navigation/native'; // ❗ useRoute 추가
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import apiService from '../services/apiService';
 import SongListItem from '../components/SongListItem';
 import debounce from 'lodash.debounce';
 import { playTrack, loadQueue } from '../store/slices/playerSlice';
-import { fetchMyPlaylists, createPlaylist } from '../store/slices/playlistSlice';
+import { fetchMyPlaylists, createPlaylist, fetchPlaylistDetails, addSongToPlaylistThunk } from '../store/slices/playlistSlice';
 import { loadSearchHistory, addRecentSearch, removeRecentSearch, clearSearchHistory } from '../store/slices/searchSlice';
 
 const PlaylistListItem = ({ item, onPress }) => (
@@ -26,12 +26,19 @@ const PlaylistListItem = ({ item, onPress }) => (
 const SearchScreen = () => {
   const dispatch = useDispatch();
   const navigation = useNavigation();
-  const route = useRoute(); // ❗ useRoute 훅 사용
+  const route = useRoute();
+  const { targetPlaylistId, targetPlaylistTitle } = route.params || {};
 
-  const { isCreatingPlaylist, playlistTitle, playlistDescription } = route.params || {}; // ❗ 파라미터 가져오기
+  const {
+    isCreatingPlaylist,
+    playlistTitle,
+    playlistDescription,
+    newlyCreatedPlaylistId,
+  } = route.params || {}; // ❗ 파라미터 가져오기
 
   const { userPlaylists, status: playlistStatus } = useSelector((state) => state.playlist);
   const { history } = useSelector((state) => state.search);
+  const userId = useSelector((state) => state.auth.user?.id);
   const spotifyState = useSelector((state) => state.spotify);
 
   const [query, setQuery] = useState('');
@@ -43,8 +50,10 @@ const SearchScreen = () => {
   
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedSong, setSelectedSong] = useState(null);
-  const [newlyCreatedPlaylistId, setNewlyCreatedPlaylistId] = useState(null); // ❗ 새로 추가
   const [likeInflight, setLikeInflight] = useState({});
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef(null);
 
   const canPlayFullTracks = useMemo(() => {
     const hasToken = !!spotifyState?.accessToken;
@@ -59,9 +68,20 @@ const SearchScreen = () => {
 
   useEffect(() => {
     dispatch(fetchMyPlaylists());
-    dispatch(loadSearchHistory());
     dispatch(fetchLikedSongs());
-  }, [dispatch]);
+  }, [dispatch, userId]);
+
+  useEffect(() => {
+    dispatch(loadSearchHistory());
+  }, [dispatch, userId]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   // 좋아요한 곡 화면은 Redux likedSongsSlice.list를 직접 사용합니다.
 
@@ -116,7 +136,16 @@ const SearchScreen = () => {
     debouncedSearch(text);
   };
 
-  const openPlaylistModal = async (song) => {
+  const openPlaylistModal = (song) => {
+    if (!song) {
+      return;
+    }
+
+    if (targetPlaylistId) {
+      handleAddSongToPlaylist(targetPlaylistId, song);
+      return;
+    }
+
     setSelectedSong(song);
     setModalVisible(true);
   };
@@ -125,33 +154,57 @@ const SearchScreen = () => {
     setShowLiked((v) => !v);
   };
 
-  const handleAddSongToPlaylist = async (playlistId) => {
-    if (!selectedSong) return;
+  const handleAddSongToPlaylist = async (playlistId, songOverride = null) => {
+    const songToAdd = songOverride || selectedSong;
+    if (!songToAdd) return;
 
-    let targetPlaylistId = playlistId;
+    let destinationPlaylistId = playlistId;
 
     try {
-      // ❗ 새 플레이리스트 생성 플로우
       if (isCreatingPlaylist && !newlyCreatedPlaylistId) {
         Alert.alert('플레이리스트 생성 중', '새 플레이리스트를 생성하고 곡을 추가합니다.');
         const newPlaylist = await dispatch(createPlaylist({
           title: playlistTitle,
           description: playlistDescription,
           is_public: true,
-        })).unwrap(); // unwrap()을 사용하여 fulfilled 또는 rejected 값을 직접 가져옴
-        targetPlaylistId = newPlaylist.id;
-        setNewlyCreatedPlaylistId(newPlaylist.id); // 생성된 플레이리스트 ID 저장
+        })).unwrap();
+        destinationPlaylistId = newPlaylist.id;
       }
 
-      await apiService.addSongToPlaylist(targetPlaylistId, selectedSong);
-      dispatch(fetchMyPlaylists()); // ❗ 추가: 플레이리스트 목록 새로고침
-      setModalVisible(false);
-      Alert.alert('성공', `'${selectedSong.name}' 곡이 플레이리스트에 추가되었습니다.`);
-      setSelectedSong(null);
+      await dispatch(
+        addSongToPlaylistThunk({
+          playlistId: destinationPlaylistId,
+          songData: songToAdd,
+        })
+      ).unwrap();
 
-      // 새 플레이리스트 생성 후 곡 추가가 완료되면 CreatePlaylistScreen으로 돌아가지 않고 SearchScreen에 머무름
+      setModalVisible(false);
+      setSelectedSong(null);
+      showToast('플레이리스트에 추가되었습니다.');
+
+      await dispatch(fetchMyPlaylists());
+      if (targetPlaylistId && destinationPlaylistId === targetPlaylistId) {
+        await dispatch(fetchPlaylistDetails(targetPlaylistId));
+      }
     } catch (error) {
-      const errorMessage = error.response?.data?.message || '곡 추가에 실패했습니다.';
+      const status = error?.status;
+      const errorMessage = error?.message || '곡 추가에 실패했습니다.';
+      const isDuplicate =
+        status === 409 ||
+        /이미/.test(errorMessage) ||
+        /already/i.test(errorMessage) ||
+        /duplicate/i.test(errorMessage);
+
+      if (isDuplicate) {
+        setModalVisible(false);
+        setSelectedSong(null);
+        showToast('이미 추가한 곡입니다.');
+        if (targetPlaylistId) {
+          await dispatch(fetchPlaylistDetails(targetPlaylistId));
+        }
+        return;
+      }
+
       Alert.alert('오류', errorMessage);
     }
   };
@@ -298,7 +351,6 @@ const SearchScreen = () => {
       // 생성 모드 해제 및 상태 정리
       setModalVisible(false);
       setSelectedSong(null);
-      setNewlyCreatedPlaylistId(null);
       // Search 화면을 기본 상태로 전환 (params 제거)
       if (navigation.setParams) {
         navigation.setParams({
@@ -313,6 +365,18 @@ const SearchScreen = () => {
       Alert.alert('오류', '플레이리스트를 먼저 생성해주세요.');
     }
   };
+
+  const showToast = useCallback((message) => {
+    setToastMessage(message);
+    setToastVisible(true);
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = setTimeout(() => {
+      setToastVisible(false);
+      toastTimerRef.current = null;
+    }, 2000);
+  }, []);
 
   // Update header buttons: save button and liked toggle
   useLayoutEffect(() => {
@@ -352,14 +416,21 @@ const SearchScreen = () => {
             </TouchableOpacity>
           </View>
         </View>
-        {isCreatingPlaylist && (
+        {isCreatingPlaylist ? (
           <View style={styles.playlistInfo}>
             <Text style={styles.playlistTitle}>'{playlistTitle}' 생성 중...</Text>
             {newlyCreatedPlaylistId && (
               <Text style={styles.playlistSubtext}>곡을 추가한 후 저장 버튼을 눌러주세요</Text>
             )}
           </View>
-        )}
+        ) : targetPlaylistId ? (
+          <View style={styles.playlistInfo}>
+            <Text style={styles.playlistTitle}>
+              '{targetPlaylistTitle || '선택한 플레이리스트'}'에 곡 추가 중...
+            </Text>
+            <Text style={styles.playlistSubtext}>곡을 선택하면 자동으로 추가됩니다.</Text>
+          </View>
+        ) : null}
       </View>
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
@@ -477,6 +548,11 @@ const SearchScreen = () => {
           </View>
         </View>
       </Modal>
+      {toastVisible && !!toastMessage && (
+        <View style={styles.toastWrapper} pointerEvents="none">
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -765,6 +841,21 @@ const styles = StyleSheet.create({
   cancelButtonText: { 
     color: '#ffffff', 
     textAlign: 'center', 
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  toastWrapper: {
+    position: 'absolute',
+    bottom: 40,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+  },
+  toastText: {
+    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
   },

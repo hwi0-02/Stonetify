@@ -17,7 +17,18 @@ const SignUpScreen = ({ navigation }) => {
 
   useEffect(() => {
     if (status === 'failed' && error) {
-      Alert.alert('회원가입 실패', error);
+      let title = '회원가입 실패';
+      let message = error;
+
+      if (error.includes('이미 존재하는 사용자입니다.')) {
+        title = '이메일 중복';
+        message = '이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.';
+      } else if (error.includes('이미 사용 중인 닉네임입니다.')) {
+        title = '닉네임 중복';
+        message = '이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해주세요.';
+      }
+
+      Alert.alert(title, message);
       dispatch(resetAuthStatus());
     }
   }, [status, error, dispatch]);
@@ -25,6 +36,11 @@ const SignUpScreen = ({ navigation }) => {
   const handleSignUp = () => {
     if (!email || !password || !displayName) {
       Alert.alert('입력 오류', '닉네임, 이메일, 비밀번호는 필수입니다.');
+      return;
+    }
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('입력 오류', '올바른 이메일 형식이 아닙니다.');
       return;
     }
     if (password !== confirmPassword) {

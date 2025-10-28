@@ -1,25 +1,38 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logout } from './authSlice';
 
 const SEARCH_HISTORY_KEY = 'search_history';
 const MAX_HISTORY_ITEMS = 10;
 
+const getStorageKey = (userId) => (userId ? `${SEARCH_HISTORY_KEY}_${userId}` : SEARCH_HISTORY_KEY);
+
 export const loadSearchHistory = createAsyncThunk(
   'search/loadHistory',
-  async (_, { rejectWithValue }) => {
+  async (_, { rejectWithValue, getState }) => {
+    const state = getState();
+    const userId = state?.auth?.user?.id;
+    const storageKey = getStorageKey(userId);
+
     try {
-      const stored = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
-      return stored ? JSON.parse(stored) : [];
+      const stored = await AsyncStorage.getItem(storageKey);
+      return {
+        history: stored ? JSON.parse(stored) : [],
+        storageKey,
+      };
     } catch (error) {
       console.error('검색 기록을 불러오지 못했습니다.', error);
-      return rejectWithValue(error);
+      return rejectWithValue({
+        message: error?.message ?? '검색 기록을 불러오지 못했습니다.',
+        storageKey,
+      });
     }
   }
 );
 
-const persistHistory = async (history) => {
+const persistHistory = async (storageKey, history) => {
   try {
-    await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
+    await AsyncStorage.setItem(storageKey, JSON.stringify(history));
   } catch (error) {
     console.error('검색 기록을 저장하지 못했습니다.', error);
   }
@@ -31,6 +44,7 @@ const searchSlice = createSlice({
     history: [],
     popularSearches: ['K-pop', 'Jazz', 'Rock', 'Pop', 'Classical'],
     status: 'idle',
+    storageKey: SEARCH_HISTORY_KEY,
   },
   reducers: {
     addRecentSearch: (state, action) => {
@@ -59,7 +73,8 @@ const searchSlice = createSlice({
         state.history = state.history.slice(0, MAX_HISTORY_ITEMS);
       }
 
-      persistHistory(state.history);
+      const storageKey = state.storageKey || SEARCH_HISTORY_KEY;
+      persistHistory(storageKey, state.history);
     },
     removeRecentSearch: (state, action) => {
       const entry = action.payload;
@@ -70,11 +85,13 @@ const searchSlice = createSlice({
         return !(item.type === entry.type && currentId === identifier);
       });
 
-      persistHistory(state.history);
+      const storageKey = state.storageKey || SEARCH_HISTORY_KEY;
+      persistHistory(storageKey, state.history);
     },
     clearSearchHistory: (state) => {
       state.history = [];
-      AsyncStorage.removeItem(SEARCH_HISTORY_KEY).catch((error) =>
+      const storageKey = state.storageKey || SEARCH_HISTORY_KEY;
+      AsyncStorage.removeItem(storageKey).catch((error) =>
         console.error('검색 기록을 삭제하지 못했습니다.', error)
       );
     },
@@ -86,10 +103,21 @@ const searchSlice = createSlice({
       })
       .addCase(loadSearchHistory.fulfilled, (state, action) => {
         state.status = 'succeeded';
-        state.history = Array.isArray(action.payload) ? action.payload : [];
+        state.storageKey = action.payload?.storageKey || SEARCH_HISTORY_KEY;
+        state.history = Array.isArray(action.payload?.history)
+          ? action.payload.history
+          : [];
       })
-      .addCase(loadSearchHistory.rejected, (state) => {
+      .addCase(loadSearchHistory.rejected, (state, action) => {
         state.status = 'failed';
+        if (action.payload?.storageKey) {
+          state.storageKey = action.payload.storageKey;
+        }
+      })
+      .addCase(logout.fulfilled, (state) => {
+        state.history = [];
+        state.storageKey = SEARCH_HISTORY_KEY;
+        state.status = 'idle';
       });
   },
 });

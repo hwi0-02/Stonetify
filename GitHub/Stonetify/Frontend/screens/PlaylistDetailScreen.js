@@ -1,17 +1,52 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share } from 'react-native';
 import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists } from '../store/slices/playlistSlice';
+import { fetchPlaylistDetails, updatePlaylist, deletePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists, savePlaylistAsync, fetchMyPlaylists } from '../store/slices/playlistSlice';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
 import { addRecentPlaylist } from '../store/slices/recentPlaylistsSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import SongListItem from '../components/SongListItem';
-import * as ApiService from '../services/apiService';
+import { useFocusEffect } from '@react-navigation/native'; // 추가
+import SongListItem from '../components/SongListItem'; // 추가
 
-const placeholderAlbum = require('../assets/images/placeholder_album.png');
+const hasPlayableIdentifier = (song) => {
+  if (!song) return false;
+
+  const candidateStrings = [
+    song.uri,
+    song.spotify_uri,
+    song.spotifyUri,
+    song.spotifyURI,
+    song.spotify_id,
+    song.spotifyId,
+  ].filter((value) => typeof value === 'string' && value.trim().length > 0);
+
+  if (candidateStrings.length > 0) {
+    return true;
+  }
+
+  const fallbackId =
+    song.id ||
+    song.song_id ||
+    song.track_id ||
+    song.trackId ||
+    song.songId ||
+    null;
+
+  if (fallbackId !== null && fallbackId !== undefined) {
+    const fallbackString = String(fallbackId).trim();
+    if (fallbackString.length > 0 && fallbackString !== '[object Object]') {
+      return !fallbackString.startsWith('-');
+    }
+  }
+
+  return false;
+};
+
+const filterPlayableSongs = (songs = []) =>
+  songs.filter((song) => hasPlayableIdentifier(song));
 
 // 4개 이미지 격자를 렌더링하는 컴포넌트
 const PlaylistHeaderImage = ({ songs }) => {
@@ -48,10 +83,11 @@ const PlaylistHeaderImage = ({ songs }) => {
 const PlaylistDetailScreen = ({ route, navigation }) => {
   const dispatch = useDispatch();
   const { playlistId } = route.params;
-  const { currentPlaylist, status, likedPlaylists } = useSelector((state) => state.playlist);
+  const { currentPlaylist, status, likedPlaylists, userPlaylists } = useSelector((state) => state.playlist);
   const { map: likedSongsMap } = useSelector((state) => state.likedSongs);
   const { user } = useSelector((state) => state.auth);
   const spotify = useSelector((state) => state.spotify);
+  const { accessToken: spotifyAccessToken, isPremium: spotifyIsPremium } = spotify || {};
   
   const [menuVisible, setMenuVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -59,14 +95,24 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [editDescription, setEditDescription] = useState('');
   const [isLiked, setIsLiked] = useState(false);
   const [likeInflight, setLikeInflight] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (playlistId) {
       dispatch(fetchPlaylistDetails(playlistId));
       dispatch(fetchLikedPlaylists());
       dispatch(fetchLikedSongs());
+      dispatch(fetchMyPlaylists());
     }
   }, [dispatch, playlistId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!playlistId) return;
+      dispatch(fetchPlaylistDetails(playlistId));
+      dispatch(fetchMyPlaylists());
+    }, [dispatch, playlistId])
+  );
 
   useEffect(() => {
     if (currentPlaylist) {
@@ -106,27 +152,94 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }));
   }, [dispatch, currentPlaylist?.id]);
 
+  const playableSongs = useMemo(
+    () => filterPlayableSongs(currentPlaylist?.songs || []),
+    [currentPlaylist?.songs]
+  );
 
-  
+  const isOwner = useMemo(() => {
+    return Boolean(currentPlaylist && user && currentPlaylist.user_id === user.id);
+  }, [currentPlaylist, user]);
+
+  const isAlreadySaved = useMemo(() => {
+    if (!currentPlaylist || !Array.isArray(userPlaylists) || !user?.id) {
+      return false;
+    }
+
+    const savedByOrigin = userPlaylists.some(
+      (playlist) =>
+        playlist.user_id === user.id &&
+        playlist.saved_from_playlist_id === currentPlaylist.id
+    );
+    if (savedByOrigin) {
+      return true;
+    }
+
+    const originalCreatorName = currentPlaylist.user?.display_name || 'Unknown';
+    const playlistTitle = currentPlaylist.title || '';
+    const expectedSavedTitle = `'${originalCreatorName}'님의 ${playlistTitle}`;
+    return userPlaylists.some(
+      (playlist) => playlist.user_id === user.id && playlist.title === expectedSavedTitle
+    );
+  }, [currentPlaylist, userPlaylists, user?.id]);
+
   const handleEditPlaylist = () => {
     setMenuVisible(false);
     setEditModalVisible(true);
   };
 
-  const handlePlayTrack = (song) => {
-    dispatch(playTrackWithPlaylist(song, currentPlaylist.songs));
-    navigation.navigate('Player');
-  };
+  const handlePlayTrack = useCallback(async (song) => {
+    if (!song) {
+      return;
+    }
 
-  const handlePlayAll = async () => {
-    if (!currentPlaylist?.songs?.length) {
-      Alert.alert('알림', '플레이리스트에 곡이 없습니다.');
+    if (!playableSongs.length) {
+      Alert.alert('알림', '재생할 수 있는 곡이 없습니다.');
+      return;
+    }
+
+    if (!hasPlayableIdentifier(song)) {
+      Alert.alert('알림', '이 곡은 재생할 수 없어 목록에서 제외되었어요.');
+      return;
+    }
+
+    const queueIndex = playableSongs.findIndex((candidate) => {
+      if (candidate === song) return true;
+      if (candidate?.id && song?.id && candidate.id === song.id) return true;
+      if (candidate?.spotify_id && song?.spotify_id && candidate.spotify_id === song.spotify_id) return true;
+      return false;
+    });
+
+    const targetIndex = queueIndex >= 0 ? queueIndex : 0;
+    const trackToPlay = playableSongs[targetIndex];
+
+    try {
+      await dispatch(
+        playTrackWithPlaylist({
+          track: trackToPlay,
+          playlist: playableSongs,
+          index: targetIndex,
+        })
+      );
+      navigation.navigate('Player');
+    } catch (error) {
+      const message =
+        typeof error === 'string'
+          ? error
+          : error?.message || '재생에 실패했습니다.';
+      Alert.alert('재생 실패', message);
+    }
+  }, [dispatch, navigation, playableSongs]);
+
+  const handlePlayAll = useCallback(async () => {
+    if (!playableSongs.length) {
+      Alert.alert('알림', '재생할 수 있는 곡이 없습니다.');
       return;
     }
 
     try {
       // If Spotify full-track requires auth, route to Profile to connect then auto-play
-      const needsSpotify = !spotify?.accessToken || !spotify?.isPremium;
+      const needsSpotify = !spotifyAccessToken || !spotifyIsPremium;
       if (needsSpotify) {
         navigation.navigate('Main', {
           screen: 'Profile',
@@ -141,21 +254,40 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         return;
       }
 
-      await dispatch(playTrackWithPlaylist({ playlist: currentPlaylist.songs }));
+      await dispatch(
+        playTrackWithPlaylist({
+          track: playableSongs[0],
+          playlist: playableSongs,
+          index: 0,
+        })
+      );
       navigation.navigate('Player');
     } catch (error) {
       const message = typeof error === 'string' ? error : error?.message || '재생에 실패했습니다.';
       Alert.alert('재생 실패', message);
     }
-  };
+  }, [dispatch, navigation, playableSongs, spotifyAccessToken, spotifyIsPremium]);
 
-  // 새로 추가된 '+ 노래추가' 핸들러 (원하는 동작으로 편집)
-  const handleAddSong = () => {
-    console.log('➕ 노래추가 클릭됨', { playlistId: currentPlaylist?.id });
-    // 예: AddSong 화면으로 이동
-    navigation.navigate('AddSong', { playlistId: currentPlaylist?.id });
-  };
-  
+  const handleAddSongs = useCallback(() => {
+    if (!isOwner) {
+      Alert.alert('알림', '이 플레이리스트에 곡을 추가할 수 있는 권한이 없습니다.');
+      return;
+    }
+
+    if (!currentPlaylist?.id) {
+      Alert.alert('알림', '플레이리스트 정보를 불러오지 못했습니다.');
+      return;
+    }
+
+    navigation.navigate('Main', {
+      screen: 'Search',
+      params: {
+        targetPlaylistId: currentPlaylist.id,
+        targetPlaylistTitle: currentPlaylist.title || '',
+      },
+    });
+  }, [currentPlaylist?.id, currentPlaylist?.title, isOwner, navigation]);
+
   // ❗ [수정됨] 최종 삭제 핸들러 로직
   const handleDeletePlaylist = () => {
     console.log('🚨 handleDeletePlaylist 함수 호출됨!');
@@ -254,8 +386,78 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       { cancelable: false }
     );
   };
-  
+
+  const handleSavePlaylist = useCallback(async () => {
+    console.log('🔵 [담기] handleSavePlaylist 호출됨');
+    console.log('📊 [담기] 현재 상태:', {
+      currentPlaylistId: currentPlaylist?.id,
+      currentPlaylistTitle: currentPlaylist?.title,
+      isOwner,
+      isSaving,
+      userId: user?.id,
+      isAlreadySaved,
+      userPlaylistsCount: userPlaylists?.length,
+    });
+
+    if (!currentPlaylist?.id || isOwner || isSaving) {
+      console.log('⚠️ [담기] 조기 종료:', {
+        noPlaylistId: !currentPlaylist?.id,
+        isOwner,
+        isSaving,
+      });
+      return;
+    }
+    
+    if (!user?.id) {
+      console.log('❌ [담기] 로그인 필요');
+      Alert.alert('알림', '로그인 후에 플레이리스트를 담을 수 있어요.');
+      return;
+    }
+    
+    if (isAlreadySaved) {
+      console.log('⚠️ [담기] 이미 담긴 플레이리스트');
+      Alert.alert('알림', '이미 내 플레이리스트에 담았어요.');
+      return;
+    }
+
+    console.log('🚀 [담기] API 호출 시작:', currentPlaylist.id);
+    setIsSaving(true);
+    
+    try {
+      console.log('📤 [담기] savePlaylistAsync 디스패치 중...');
+      const saved = await dispatch(savePlaylistAsync(currentPlaylist.id)).unwrap();
+      console.log('✅ [담기] savePlaylistAsync 성공:', saved);
+      
+      console.log('🔄 [담기] 플레이리스트 목록 새로고침 중...');
+      await dispatch(fetchMyPlaylists());
+      console.log('✅ [담기] 플레이리스트 목록 새로고침 완료');
+      
+      const savedTitle = currentPlaylist.title || saved?.title || '플레이리스트';
+      console.log('🎉 [담기] 성공 메시지 표시:', savedTitle);
+      Alert.alert('완료', `'${savedTitle}' 플레이리스트를 내 플레이리스트에 담았어요.`);
+    } catch (error) {
+      console.error('❌ [담기] 오류 발생:', error);
+      console.error('❌ [담기] 오류 타입:', typeof error);
+      console.error('❌ [담기] 오류 세부정보:', {
+        message: error?.message,
+        response: error?.response,
+        responseData: error?.response?.data,
+        responseStatus: error?.response?.status,
+        stack: error?.stack,
+        fullError: JSON.stringify(error, null, 2),
+      });
+      
+      const message = typeof error === 'string' ? error : error?.message || '플레이리스트를 담는 중 오류가 발생했습니다.';
+      console.log('📱 [담기] 오류 Alert 표시:', message);
+      Alert.alert('오류', message);
+    } finally {
+      console.log('🔚 [담기] setIsSaving(false) 호출');
+      setIsSaving(false);
+    }
+  }, [currentPlaylist, dispatch, isAlreadySaved, isOwner, isSaving, user?.id, userPlaylists]);
+
   const handleToggleLike = async () => {
+    if (!currentPlaylist?.id) return;
     try {
       const result = await dispatch(toggleLikePlaylist(currentPlaylist.id)).unwrap();
       setIsLiked(result.liked);
@@ -282,14 +484,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       });
     }
   };
-
-  // 추가: 각 곡의 햄버거(메뉴) 버튼 핸들러
-  const handleOpenSongMenu = (song) => {
-    console.log('🍔 곡 햄버거 클릭:', song);
-    // 예시: 곡 메뉴 모달 열기 또는 곡 관련 액션 처리
-    // TODO: 실제 모달/액션 연결
-    Alert.alert('곡 메뉴', `"${song?.name || song?.title}"에 대한 메뉴를 열었습니다.`);
-  };
   
   const handleShare = async () => {
     try {
@@ -303,16 +497,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       Alert.alert('오류', '공유 링크 생성 중 문제가 발생했습니다.');
     }
   };
-
-  // 소유자 확인 (디버깅 추가)
-  const isOwner = currentPlaylist && user && currentPlaylist.user_id === user.id;
-  console.log('🔍 isOwner 디버깅:', {
-    currentPlaylist: !!currentPlaylist,
-    user: !!user,
-    currentPlaylistUserId: currentPlaylist?.user_id,
-    userId: user?.id,
-    isOwner
-  });
 
   if (status === 'loading' || !currentPlaylist) {
     return (
@@ -334,14 +518,35 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       </Text>
       
       <View style={styles.actionButtons}>
-        {/* 디버깅을 위해 임시로 항상 표시 */}
-        <TouchableOpacity style={styles.menuButton} onPress={() => {
-          console.log('🎯 메뉴 버튼 클릭됨');
-          setMenuVisible(true);
-        }}>
-          <Ionicons name="ellipsis-horizontal" size={24} color="white" />
-        </TouchableOpacity>
-        
+        {isOwner && (
+          <TouchableOpacity style={styles.menuButton} onPress={() => {
+            console.log('🎯 메뉴 버튼 클릭됨');
+            setMenuVisible(true);
+          }}>
+            <Ionicons name="ellipsis-horizontal" size={24} color="white" />
+          </TouchableOpacity>
+        )}
+
+        {!isOwner && (
+          <TouchableOpacity
+            style={[
+              styles.saveToLibraryButton,
+              (isSaving || isAlreadySaved) && styles.saveToLibraryDisabled,
+            ]}
+            onPress={handleSavePlaylist}
+            disabled={isSaving || isAlreadySaved}
+          >
+            <Ionicons
+              name={isAlreadySaved ? 'checkmark-circle' : 'add-circle-outline'}
+              size={20}
+              color="#1DB954"
+            />
+            <Text style={styles.saveToLibraryText}>
+              {isAlreadySaved ? '담김' : '담기'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.likeButton} onPress={handleToggleLike}>
           <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? "#1DB954" : "white"} />
         </TouchableOpacity>
@@ -349,17 +554,17 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
           <Ionicons name="share-outline" size={24} color="white" />
         </TouchableOpacity>
+        {isOwner && (
+          <TouchableOpacity
+            style={styles.playAllButton}
+            onPress={handleAddSongs}
+          >
+            <Ionicons name="add" size={18} color="#121212" style={styles.playAllIcon} />
+            <Text style={styles.playAllText}>노래추가</Text>
+          </TouchableOpacity>
+        )}
         
-        {/* 추가: '+ 노래추가' 버튼 (전체재생 버튼과 동일한 스타일) */}
-        <TouchableOpacity
-          style={styles.playAllButton}
-          onPress={handleAddSong}
-        >
-          <Ionicons name="add" size={18} color="#121212" style={styles.playAllIcon} />
-          <Text style={styles.playAllText}>노래추가</Text>
-        </TouchableOpacity>
-
-        {currentPlaylist.songs && currentPlaylist.songs.length > 0 && (
+        {playableSongs.length > 0 && (
           <TouchableOpacity
             style={styles.playAllButton}
             onPress={handlePlayAll}
@@ -394,7 +599,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
               showLikeButton
               onLikePress={handleToggleSongLike}
               liked={!!(likedSongsMap[item?.id] || likedSongsMap[item?.spotify_id])}
-             onHamburgerPress={() => handleOpenSongMenu(item)}
             />
           );
         }}
@@ -577,7 +781,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 20,
-    gap: 20,
+    gap: 12,
   },
   menuButton: {
     backgroundColor: 'rgba(255,255,255,0.1)',
@@ -595,7 +799,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    marginLeft: 12,
   },
   playAllIcon: {
     marginRight: 8,
@@ -727,11 +930,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  saveToLibraryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  saveToLibraryDisabled: {
+    opacity: 0.6,
+  },
+  saveToLibraryText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
   likeButton: {
-    marginRight: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   shareButton: {
-    marginRight: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+    padding: 8,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

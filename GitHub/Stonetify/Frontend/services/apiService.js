@@ -139,6 +139,15 @@ const setCachedData = (key, data) => {
   }
 };
 
+const invalidateCacheByUrl = (url) => {
+  if (!url) return;
+  for (const key of Array.from(apiCache.keys())) {
+    if (key.startsWith(`${url}:`)) {
+      apiCache.delete(key);
+    }
+  }
+};
+
 // 요청 인터셉터 (토큰 자동 추가 + 캐싱)
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem('token');
@@ -260,6 +269,32 @@ export const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId
 export const getPlaylistById = (playlistId) => api.get(`playlists/${playlistId}`).then(res => res.data);
 export const updatePlaylist = (playlistId, playlistData) => api.put(`playlists/${playlistId}`, playlistData).then(res => res.data);
 
+export const savePlaylist = async (playlistId) => {
+  console.log('🔵 [API Service] savePlaylist 호출:', playlistId);
+  console.log('📍 [API Service] API URL:', API_URL);
+  console.log('📍 [API Service] 요청 경로:', `playlists/${playlistId}/save`);
+  
+  try {
+    console.log('📤 [API Service] POST 요청 시작...');
+    const response = await api.post(`playlists/${playlistId}/save`);
+    console.log('✅ [API Service] POST 요청 성공');
+    console.log('📦 [API Service] 응답 데이터:', response.data);
+    console.log('📊 [API Service] 응답 상태:', response.status);
+    invalidateCacheByUrl('playlists/me');
+    invalidateCacheByUrl('playlists/liked');
+    return response.data;
+  } catch (error) {
+    console.error('❌ [API Service] POST 요청 실패:', error);
+    console.error('❌ [API Service] 오류 타입:', error?.constructor?.name);
+    console.error('❌ [API Service] 오류 메시지:', error?.message);
+    console.error('❌ [API Service] 응답 상태:', error?.response?.status);
+    console.error('❌ [API Service] 응답 데이터:', error?.response?.data);
+    console.error('❌ [API Service] 응답 헤더:', error?.response?.headers);
+    console.error('❌ [API Service] 요청 설정:', error?.config);
+    throw error;
+  }
+};
+
 // ?�레?�리?�트 ??��
 export const deletePlaylist = async (playlistId) => {
   try {
@@ -276,19 +311,124 @@ export const deletePlaylist = async (playlistId) => {
 };
 
 // Playlist Song Management APIs
+const getArtistNames = (songData) => {
+  if (typeof songData?.artist === 'string' && songData.artist.trim().length > 0) {
+    return songData.artist;
+  }
+  if (Array.isArray(songData?.artists)) {
+    const names = songData.artists
+      .map((artist) => {
+        if (!artist) return null;
+        if (typeof artist === 'string') return artist;
+        if (typeof artist?.name === 'string') return artist.name;
+        if (typeof artist?.title === 'string') return artist.title;
+        return null;
+      })
+      .filter(Boolean);
+    return names.join(', ');
+  }
+  if (typeof songData?.artist?.name === 'string') {
+    return songData.artist.name;
+  }
+  return '';
+};
+
+const getArtistList = (songData) => {
+  if (Array.isArray(songData?.artists)) {
+    return songData.artists
+      .map((artist) => {
+        if (!artist) return null;
+        if (typeof artist === 'string') return artist;
+        if (typeof artist?.name === 'string') return artist.name;
+        if (typeof artist?.title === 'string') return artist.title;
+        return null;
+      })
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const getAlbumName = (songData) => {
+  if (typeof songData?.album === 'string') {
+    return songData.album;
+  }
+  if (typeof songData?.album?.name === 'string') {
+    return songData.album.name;
+  }
+  return songData?.album_name || '';
+};
+
+const getAlbumCoverUrl = (songData) => {
+  if (songData?.album_cover_url) return songData.album_cover_url;
+  if (songData?.albumCoverUrl) return songData.albumCoverUrl;
+  if (songData?.thumbnailUrl) return songData.thumbnailUrl;
+  if (Array.isArray(songData?.images) && songData.images.length > 0) {
+    return songData.images[0]?.url || null;
+  }
+  if (songData?.album?.images?.length) {
+    const [largest, ...rest] = songData.album.images;
+    return (
+      largest?.url ||
+      rest.find((img) => img?.url)?.url ||
+      null
+    );
+  }
+  return null;
+};
+
+const getExternalUrl = (songData) => {
+  if (typeof songData?.external_urls === 'string') return songData.external_urls;
+  if (songData?.external_urls?.spotify) return songData.external_urls.spotify;
+  if (songData?.external_url) return songData.external_url;
+  if (songData?.externalUrl) return songData.externalUrl;
+  if (songData?.preview_url) return songData.preview_url;
+  return null;
+};
+
+const getDurationMs = (songData) => {
+  if (typeof songData?.duration_ms === 'number') return songData.duration_ms;
+  if (typeof songData?.durationMs === 'number') return songData.durationMs;
+  if (typeof songData?.duration?.ms === 'number') return songData.duration.ms;
+  if (typeof songData?.duration === 'number') return songData.duration;
+  return null;
+};
+
 export const addSongToPlaylist = (playlistId, songData) => {
-  // Normalize incoming song object (from Spotify search or internal)
+  const artistList = getArtistList(songData);
+  const externalUrl = getExternalUrl(songData);
+
   const normalized = {
-    spotify_id: songData.spotify_id || songData.id || null,
+    spotify_id: songData.spotify_id || songData.id || songData.spotifyId || null,
+    spotify_uri: songData.spotify_uri || songData.uri || null,
     title: songData.title || songData.name || '',
-    artist: songData.artist || songData.artists || '',
-    album: songData.album || '',
-    album_cover_url: songData.album_cover_url || songData.albumCoverUrl || null,
-    preview_url: songData.preview_url || null,
-    duration_ms: songData.duration_ms || null,
-    external_urls: songData.external_urls || songData.external_url || null,
+    artist: getArtistNames(songData),
+    album: getAlbumName(songData),
+    album_cover_url: getAlbumCoverUrl(songData),
+    preview_url: songData.preview_url || songData.previewUrl || null,
+    duration_ms: getDurationMs(songData),
+    external_url: externalUrl,
+    external_urls: externalUrl,
   };
-  return api.post(`playlists/${playlistId}/songs`, { song: normalized }).then(res => res.data);
+
+  if (artistList.length) {
+    normalized.artists = artistList;
+  }
+
+  if (songData?.isrc || songData?.external_ids?.isrc) {
+    normalized.isrc = songData.isrc || songData.external_ids.isrc;
+  }
+
+  if (!normalized.title) {
+    normalized.title = songData?.track || '';
+  }
+
+  return api
+    .post(`playlists/${playlistId}/songs`, { song: normalized })
+    .then((res) => {
+      invalidateCacheByUrl(`playlists/${playlistId}`);
+      invalidateCacheByUrl('playlists/me');
+      return res.data;
+    });
 };
 
 // ?�레?�리?�트?�서 �???��
@@ -373,6 +513,16 @@ export const getSimilarUsers = () => api.get('recommendations/users').then(res =
 export const getTrendingPlaylists = () => api.get('recommendations/trending').then(res => res.data);
 export const getRandomPlaylists = () => api.get('playlists/random').then(res => res.data);
 
+// Gemini AI Recommendations
+export const getGeminiRecommendations = ({ mood, activity } = {}) => {
+  const params = new URLSearchParams();
+  if (mood) params.append('mood', mood);
+  if (activity) params.append('activity', activity);
+  const queryString = params.toString();
+  return api.get(`recommendations/gemini${queryString ? `?${queryString}` : ''}`).then(res => res.data);
+};
+export const postRecommendationFeedback = (feedbackData) => api.post('recommendations/feedback', feedbackData).then(res => res.data);
+
 // Utility APIs
 export const testConnection = () => api.get('users/test').then(res => res.data);
 
@@ -400,6 +550,7 @@ const apiService = {
   getPlaylistById,
   updatePlaylist,
   deletePlaylist,
+  savePlaylist,
   
   // Playlist Songs
   addSongToPlaylist,
@@ -455,6 +606,10 @@ const apiService = {
   getSimilarUsers,
   getTrendingPlaylists,
   getRandomPlaylists,
+  
+  // Gemini AI Recommendations
+  getGeminiRecommendations,
+  postRecommendationFeedback,
   
   // Utilities
   testConnection,

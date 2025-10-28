@@ -255,6 +255,14 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new Error('이미 존재하는 사용자입니다.');
     }
 
+    console.log('🔍 닉네임 중복 검사...');
+    const displayNameExists = await User.findByDisplayName(display_name);
+    if (displayNameExists) {
+        console.log('❌ 이미 사용 중인 닉네임:', display_name);
+        res.status(400);
+        throw new Error('이미 사용 중인 닉네임입니다.');
+    }
+
     // 비밀번호 해싱
     console.log('🔒 비밀번호 해싱...');
     const salt = await bcrypt.genSalt(10);

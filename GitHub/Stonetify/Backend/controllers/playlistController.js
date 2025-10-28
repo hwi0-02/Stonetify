@@ -353,7 +353,11 @@ const removeSongFromPlaylist = asyncHandler(async (req, res) => {
 
 // 플레이리스트 좋아요/취소 토글
 const likePlaylist = asyncHandler(async (req, res) => {
-    const { id: playlistId } = req.params;
+    const { playlistId } = req.params;
+    if (!playlistId) {
+        res.status(400);
+        throw new Error('플레이리스트 ID가 제공되지 않았습니다.');
+    }
     const { id: userId } = req.user;
 
     const playlist = await Playlist.findById(playlistId);
@@ -414,6 +418,71 @@ const getLikedPlaylists = asyncHandler(async (req, res) => {
         console.error('❌ Error in getLikedPlaylists:', error);
         res.status(500).json({ error: error.message });
     }
+});
+
+const savePlaylistToLibrary = asyncHandler(async (req, res) => {
+    const { playlistId } = req.params;
+    const { id: userId } = req.user;
+
+    const originalPlaylist = await Playlist.findById(playlistId);
+    if (!originalPlaylist) {
+        return res.status(404).json({ message: '플레이리스트를 찾을 수 없습니다.' });
+    }
+
+    if (originalPlaylist.user_id === userId) {
+        return res.status(400).json({ message: '자신의 플레이리스트는 담을 수 없습니다.' });
+    }
+
+    const originalOwner = await User.findById(originalPlaylist.user_id);
+    const ownerName = originalOwner?.display_name || 'Unknown';
+    const newTitle = `'${ownerName}'님의 ${originalPlaylist.title}`;
+
+    const myPlaylists = await Playlist.findByUserId(userId);
+    const alreadySaved = (myPlaylists || []).some((playlist) => {
+        if (playlist.saved_from_playlist_id === playlistId) {
+            return true;
+        }
+        return playlist.title === newTitle;
+    });
+    if (alreadySaved) {
+        return res.status(409).json({ message: '이미 담은 플레이리스트입니다.' });
+    }
+
+    const newPlaylistId = await Playlist.create({
+        user_id: userId,
+        title: newTitle,
+        description: originalPlaylist.description || '',
+        is_public: false,
+        saved_from_playlist_id: playlistId,
+    });
+
+    const originalLinks = await PlaylistSongs.findByPlaylistIdSorted(playlistId);
+    const copyTasks = [];
+
+    for (let index = 0; index < originalLinks.length; index++) {
+        const link = originalLinks[index];
+        const songId = link.song_id;
+        if (!songId) {
+            continue;
+        }
+
+        const position = typeof link.position === 'number' ? link.position : index;
+
+        copyTasks.push(
+            PlaylistSongs.create({
+                playlist_id: newPlaylistId,
+                song_id: songId,
+                position,
+            })
+        );
+    }
+
+    if (copyTasks.length > 0) {
+        await Promise.all(copyTasks);
+    }
+
+    const savedPlaylist = await Playlist.findById(newPlaylistId);
+    res.status(201).json(savedPlaylist);
 });
 
 // 인기 플레이리스트 차트 조회 (일간/주간)
@@ -634,6 +703,7 @@ module.exports = {
     deactivateShareLink,
     getRandomPlaylists,
     getPopularPlaylists,
+    savePlaylistToLibrary,
     // song likes
     toggleLikeSong: asyncHandler(async (req, res) => {
         const { songId } = req.params;
