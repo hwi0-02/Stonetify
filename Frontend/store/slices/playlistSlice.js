@@ -286,6 +286,21 @@ export const addSongToPlaylistThunk = createAsyncThunk(
   }
 );
 
+export const deletePlaylistAsync = createAsyncThunk(
+  'playlist/deletePlaylist',
+  async (playlistId, { rejectWithValue }) => {
+    try {
+      await apiService.deletePlaylist(playlistId);
+      return playlistId;
+    } catch (error) {
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        '플레이리스트 삭제에 실패했습니다.';
+      return rejectWithValue(message);
+    }
+  }
+);
 
 const playlistSlice = createSlice({
   name: 'playlist',

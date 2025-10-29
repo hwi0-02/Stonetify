@@ -50,27 +50,27 @@ const CONFIG = {
   PRODUCTION_API,
 };
 
-// ?�경�?API URL ?�정 (최적?�된 버전)
+// 환경별 API URL 설정(최적화된 버전)
 const getApiUrl = () => {
   if (__DEV__) {
     if (Platform.OS === 'web') {
       const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
       
-      // HTTPS ?�널 모드 감�? �??�록???�버 ?�용
+      // HTTPS 터널 모드 감지 시 프록시 서버 사용
       if (currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'))) {
         console.log('Tunnel mode detected: using HTTPS proxy endpoint');
         return CONFIG.PROXY_API_URL;
       }
       
-      // 로컬 ??개발
+      // 로컬 웹 개발
       return `http://localhost:${CONFIG.BACKEND_PORT}/api/`;
     }
     
-    // 모바?�에???�널 모드 감�?
+    // 모바일에서 터널 모드 감지
     const hostUri = Constants.expoConfig?.hostUri;
     
     if (hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'))) {
-      // 모바???�널 모드?�서??IP 주소 ?�용
+      // 모바일 터널 모드에서 터널 API URL 사용
       return CONFIG.TUNNEL_API_URL;
     }
     
@@ -79,18 +79,18 @@ const getApiUrl = () => {
       return `http://10.0.2.2:${CONFIG.BACKEND_PORT}/api/`;
     }
 
-    // ?�반 로컬 ?�트?�크 (iOS 시뮬레이터/실기기 등)
+    // 일반 로컬 네트워크(iOS 시뮬레이터/실기기 등)
     return CONFIG.LOCAL_API_URL;
   }
   
-  // ?�로?�션 ?�경
+  // 프로덕션 환경
   return CONFIG.PRODUCTION_API;
 };
 
 // 초기??
 const API_URL = getApiUrl();
 
-// ?�널 모드 감�? ?�틸리티 (최적??
+// 터널 모드 감지 유틸리티(최적화)
 const isTunnelMode = () => {
   if (Platform.OS === 'web') {
     const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
@@ -230,14 +230,14 @@ api.interceptors.response.use(
       return Promise.reject(revokedError);
     }
     
-    // ?�트?�크 ?�류 ?�시??로직
+    // 네트워크 오류 재시도 로직
     if ((error.code === 'NETWORK_ERROR' || error.code === 'ECONNABORTED') && !originalRequest._retry) {
       originalRequest._retry = true;
       await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
       return api(originalRequest);
     }
     
-    // 401 ?�러 ???�큰 ?�리 �?로그?�웃
+    // 401 오류 시 토큰 정리 및 로그아웃
     if (error.response?.status === 401) {
       await AsyncStorage.multiRemove(['token', 'user']);
     }
@@ -298,14 +298,22 @@ export const savePlaylist = async (playlistId) => {
 // ?�레?�리?�트 ??��
 export const deletePlaylist = async (playlistId) => {
   try {
-    console.log('?���??�레?�리?�트 ??�� API ?�출:', playlistId);
+    console.log('플레이리스트 삭제 API 호출:', playlistId);
     const response = await api.delete(`playlists/${playlistId}`);
-    console.log('???�레?�리?�트 ??�� ?�공:', response.data);
+    console.log('플레이리스트 삭제 성공:', response.data);
+
+    invalidateCacheByUrl(`playlists/${playlistId}`);
+    invalidateCacheByUrl('playlists/me');
+    invalidateCacheByUrl('playlists/liked');
+    invalidateCacheByUrl('playlists/popular');
+    invalidateCacheByUrl('playlists/random');
+    invalidateCacheByUrl('recommendations/playlists');
+
     return response.data;
   } catch (error) {
-    console.error('???�레?�리?�트 ??�� ?�패:', error);
-    console.error('?�러 ?�태:', error.response?.status);
-    console.error('?�러 메시지:', error.response?.data);
+    console.error('플레이리스트 삭제 실패:', error);
+    console.error('오류 상태:', error.response?.status);
+    console.error('오류 메시지:', error.response?.data);
     throw error;
   }
 };
@@ -431,17 +439,17 @@ export const addSongToPlaylist = (playlistId, songData) => {
     });
 };
 
-// ?�레?�리?�트?�서 �???��
+// 플레이리스트에서 곡 삭제
 export const removeSongFromPlaylist = async (playlistId, songId) => {
   try {
-    console.log('?���?�???�� API ?�출:', { playlistId, songId });
+    console.log('플레이리스트 곡 삭제 API 호출:', { playlistId, songId });
     const response = await api.delete(`playlists/${playlistId}/songs/${songId}`);
-    console.log('??�???�� ?�공:', response.data);
+    console.log('곡 삭제 성공:', response.data);
     return response.data;
   } catch (error) {
-    console.error('??�???�� ?�패:', error);
-    console.error('?�러 ?�태:', error.response?.status);
-    console.error('?�러 메시지:', error.response?.data);
+    console.error('곡 삭제 실패:', error);
+    console.error('오류 상태:', error.response?.status);
+    console.error('오류 메시지:', error.response?.data);
     throw error;
   }
 };

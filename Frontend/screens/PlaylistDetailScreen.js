@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, Share, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
-import { fetchPlaylistDetails, updatePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists, savePlaylistAsync, fetchMyPlaylists } from '../store/slices/playlistSlice';
+import { fetchPlaylistDetails, updatePlaylist, toggleLikePlaylist, createShareLinkAsync, fetchLikedPlaylists, savePlaylistAsync, fetchMyPlaylists, deletePlaylistAsync } from '../store/slices/playlistSlice';
 import ApiService from '../services/apiService';
 import { playTrackWithPlaylist } from '../store/slices/playerSlice';
 import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
 import { addRecentPlaylist } from '../store/slices/recentPlaylistsSlice';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native'; // 추가
-import SongListItem from '../components/SongListItem'; // 추가
+import { useFocusEffect } from '@react-navigation/native';
+import SongListItem from '../components/SongListItem';
 
 const hasPlayableIdentifier = (song) => {
   if (!song) return false;
@@ -49,7 +49,6 @@ const hasPlayableIdentifier = (song) => {
 const filterPlayableSongs = (songs = []) =>
   songs.filter((song) => hasPlayableIdentifier(song));
 
-// 4개 이미지 격자를 렌더링하는 컴포넌트
 const PlaylistHeaderImage = ({ songs }) => {
   const placeholderUrl = require('../assets/images/placeholder_album.png');
   
@@ -100,6 +99,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const toastTimerRef = useRef(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
 
   useEffect(() => {
     if (playlistId) {
@@ -242,7 +242,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
 
     try {
-      // If Spotify full-track requires auth, route to Profile to connect then auto-play
       const needsSpotify = !spotifyAccessToken || !spotifyIsPremium;
       if (needsSpotify) {
         navigation.navigate('Main', {
@@ -250,7 +249,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
           params: {
             postConnect: {
               action: 'playAll',
-              // Pass minimal data needed to start playback
               playlist: currentPlaylist.songs,
             }
           }
@@ -292,51 +290,59 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     });
   }, [currentPlaylist?.id, currentPlaylist?.title, isOwner, navigation]);
 
-  // ❗ [수정됨] 최종 삭제 핸들러 로직
-  const handleDeletePlaylist = () => {
-    console.log('🚨 handleDeletePlaylist 함수 호출됨!');
-    console.log('playlistId:', playlistId);
-    console.log('currentPlaylist:', currentPlaylist);
-    
-    // route.params에서 받은 playlistId가 가장 확실한 값
-    if (!playlistId) {
-      console.log('❌ playlistId가 없음');
+  const showDeletionToast = useCallback(
+    (message = '플레이리스트를 삭제했습니다.', duration = 2000) =>
+      new Promise((resolve) => {
+        if (toastTimerRef.current) {
+          clearTimeout(toastTimerRef.current);
+        }
+        setToastMessage(message);
+        setToastVisible(true);
+        toastTimerRef.current = setTimeout(() => {
+          setToastVisible(false);
+          toastTimerRef.current = null;
+          resolve();
+        }, duration);
+      }),
+    []
+  );
+
+  const performPlaylistDeletion = useCallback(async () => {
+    const targetPlaylistId = currentPlaylist?.id ?? playlistId;
+
+    if (!targetPlaylistId) {
+      setDeleteModalVisible(false);
       Alert.alert('❌ 오류', '플레이리스트 ID가 없어 삭제할 수 없습니다.');
       return;
     }
 
-    console.log('📱 Alert.alert 호출 시도...');
-    setMenuVisible(false); // 메뉴를 먼저 닫아 UI 충돌 방지
+    try {
+      await dispatch(deletePlaylistAsync(targetPlaylistId)).unwrap();
+      await Promise.all([
+        dispatch(fetchMyPlaylists()),
+        dispatch(fetchLikedPlaylists()),
+      ]);
+      setDeleteModalVisible(false);
+      await showDeletionToast('플레이리스트를 삭제했습니다.', 2000);
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Main', params: { screen: 'Profile' } }],
+      });
+    } catch (error) {
+      setDeleteModalVisible(false);
+      const message =
+        typeof error === 'string'
+          ? error
+          : error?.message || '플레이리스트 삭제 중 오류가 발생했습니다.';
+      Alert.alert('❌ 삭제 실패', message);
+    }
+  }, [currentPlaylist?.id, playlistId, dispatch, navigation, showDeletionToast]);
 
-    Alert.alert(
-      '⚠️ 플레이리스트 삭제',
-      `"${currentPlaylist?.title || '이 플레이리스트'}"을(를) 정말로 삭제하시겠습니까?\n\n⚠️ 이 작업은 되돌릴 수 없으며, 플레이리스트와 모든 곡이 영구적으로 삭제됩니다.`,
-      [
-        {
-          text: '취소',
-          style: 'cancel',
-          onPress: () => console.log('✋ 플레이리스트 삭제 취소됨')
-        },
-        {
-          text: '영구 삭제',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await ApiService.deletePlaylist(playlistId);
-              await dispatch(fetchMyPlaylists());
-              await showDeletionToast();
-              navigation.navigate('Main', { screen: 'Profile' });
-            } catch (error) {
-              Alert.alert('❌ 삭제 실패', error?.message || '플레이리스트 삭제 중 오류가 발생했습니다.');
-            }
-          },
-        },
-      ],
-      { cancelable: false }
-    );
-    console.log('📱 Alert.alert 호출 완료');
-  };
-  
+  const handleDeletePlaylist = useCallback(() => {
+    setMenuVisible(false);
+    setDeleteModalVisible(true);
+  }, []);
+
   const handleSaveEdit = async () => {
     if (!editTitle.trim()) {
       Alert.alert('오류', '플레이리스트 제목을 입력해주세요.');
@@ -376,8 +382,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         Alert.alert('❌ 제거 실패', msg);
       }
     };
-
-    // 모든 플랫폼에서 Alert.alert 사용
 
     Alert.alert(
       '🎵 곡 제거',
@@ -501,23 +505,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }
   };
 
-  const showDeletionToast = useCallback(
-    (message = '플레이리스트를 삭제했습니다.', duration = 2000) =>
-      new Promise((resolve) => {
-        if (toastTimerRef.current) {
-          clearTimeout(toastTimerRef.current);
-        }
-        setToastMessage(message);
-        setToastVisible(true);
-        toastTimerRef.current = setTimeout(() => {
-          setToastVisible(false);
-          toastTimerRef.current = null;
-          resolve();
-        }, duration);
-      }),
-    []
-  );
-
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) {
@@ -530,6 +517,11 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#8A2BE2" />
+        {toastVisible && (
+          <View style={styles.toastContainer}>
+            <Text style={styles.toastText}>{toastMessage}</Text>
+          </View>
+        )}
       </View>
     );
   }
@@ -737,6 +729,36 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
                   <Text style={styles.saveButtonText}>저장</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={deleteModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteModal}>
+            <Text style={styles.deleteTitle}>플레이리스트를 삭제할까요?</Text>
+            <Text style={styles.deleteMessage}>
+              "{currentPlaylist?.title || '플레이리스트'}"을(를) 삭제하면 되돌릴 수 없어요.
+            </Text>
+            <View style={styles.deleteButtons}>
+              <TouchableOpacity
+                style={[styles.deleteButton, styles.deleteCancelButton]}
+                onPress={() => setDeleteModalVisible(false)}
+              >
+                <Text style={styles.deleteCancelText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteButton, styles.deleteConfirmButton]}
+                onPress={performPlaylistDeletion}
+              >
+                <Text style={styles.deleteConfirmText}>삭제</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -1028,6 +1050,67 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  deleteOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  deleteModal: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  deleteTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  deleteMessage: {
+    marginTop: 12,
+    fontSize: 15,
+    color: '#4B5563',
+    lineHeight: 22,
+  },
+  deleteButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 24,
+  },
+  deleteButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    minWidth: 96,
+    alignItems: 'center',
+  },
+  deleteCancelButton: {
+    borderWidth: 1,
+    borderColor: '#8B5CF6',
+    backgroundColor: '#ffffff',
+  },
+  deleteCancelText: {
+    color: '#8B5CF6',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  deleteConfirmButton: {
+    backgroundColor: '#8B5CF6',
+  },
+  deleteConfirmText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 
