@@ -290,8 +290,8 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     });
   }, [currentPlaylist?.id, currentPlaylist?.title, isOwner, navigation]);
 
-  const showDeletionToast = useCallback(
-    (message = '플레이리스트를 삭제했습니다.', duration = 2000) =>
+  const showToast = useCallback(
+    (message, duration = 2000) =>
       new Promise((resolve) => {
         if (toastTimerRef.current) {
           clearTimeout(toastTimerRef.current);
@@ -323,7 +323,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         dispatch(fetchLikedPlaylists()),
       ]);
       setDeleteModalVisible(false);
-      await showDeletionToast('플레이리스트를 삭제했습니다.', 2000);
+      await showToast('플레이리스트를 삭제했습니다.', 2000);
       navigation.reset({
         index: 0,
         routes: [{ name: 'Main', params: { screen: 'Profile' } }],
@@ -336,7 +336,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
           : error?.message || '플레이리스트 삭제 중 오류가 발생했습니다.';
       Alert.alert('❌ 삭제 실패', message);
     }
-  }, [currentPlaylist?.id, playlistId, dispatch, navigation, showDeletionToast]);
+  }, [currentPlaylist?.id, playlistId, dispatch, navigation, showToast]);
 
   const handleDeletePlaylist = useCallback(() => {
     setMenuVisible(false);
@@ -441,7 +441,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       
       const savedTitle = currentPlaylist.title || saved?.title || '플레이리스트';
       console.log('🎉 [담기] 성공 메시지 표시:', savedTitle);
-      Alert.alert('완료', `'${savedTitle}' 플레이리스트를 내 플레이리스트에 담았어요.`);
+      await showToast('플레이리스트가 추가되었습니다.', 2000);
     } catch (error) {
       console.error('❌ [담기] 오류 발생:', error);
       console.error('❌ [담기] 오류 타입:', typeof error);
@@ -461,7 +461,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       console.log('🔚 [담기] setIsSaving(false) 호출');
       setIsSaving(false);
     }
-  }, [currentPlaylist, dispatch, isAlreadySaved, isOwner, isSaving, user?.id, userPlaylists]);
+  }, [currentPlaylist, dispatch, isAlreadySaved, isOwner, isSaving, showToast, user?.id, userPlaylists]);
 
   const handleToggleLike = async () => {
     if (!currentPlaylist?.id) return;
