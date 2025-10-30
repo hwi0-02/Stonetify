@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,7 +21,7 @@ const placeholderProfile = require('../assets/images/placeholder_album.png');
 const ProfileScreen = ({ navigation, route }) => {
     const dispatch = useDispatch();
     const { user } = useSelector((state) => state.auth);
-    const followStats = useSelector(
+    const followStatsFromStore = useSelector(
         (state) => state.auth.followStats || { followers: 0, following: 0 }
     );
     const { userPlaylists } = useSelector((state) => state.playlist);
@@ -59,12 +59,13 @@ const ProfileScreen = ({ navigation, route }) => {
         try {
             const data = await apiService.getUserProfile(userId);
             const stats = data?.stats || {};
-            dispatch(
-                updateFollowStats({
-                    followers: stats.followers ?? 0,
-                    following: stats.following ?? 0,
-                })
-            );
+            const normalized = {
+                followers: stats.followers ?? 0,
+                following: stats.following ?? 0,
+            };
+            followStatsRef.current = normalized;
+            setProfileStats(normalized);
+            dispatch(updateFollowStats(normalized));
         } catch (error) {
             console.warn('Failed to load profile stats', error);
         }
@@ -90,14 +91,21 @@ const ProfileScreen = ({ navigation, route }) => {
                 refresh = true,
             } = payload;
 
-            dispatch(
-                updateFollowStats({
-                    followers: followersCount,
-                    following: followingCount,
-                    followersDelta,
-                    followingDelta,
-                })
-            );
+            setProfileStats((prev = { followers: 0, following: 0 }) => {
+                const next = {
+                    followers:
+                        typeof followersCount === 'number'
+                            ? followersCount
+                            : Math.max(0, (prev.followers ?? 0) + followersDelta),
+                    following:
+                        typeof followingCount === 'number'
+                            ? followingCount
+                            : Math.max(0, (prev.following ?? 0) + followingDelta),
+                };
+                followStatsRef.current = next;
+                dispatch(updateFollowStats(next));
+                return next;
+            });
 
             if (refresh && typeof followingCount !== 'number') {
                 loadProfileStats();
@@ -402,12 +410,12 @@ const ProfileScreen = ({ navigation, route }) => {
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statItem}>
-                            <Text style={styles.statNumber}>{followStats.followers ?? 0}</Text>
+                            <Text style={styles.statNumber}>{profileStats.followers}</Text>
                             <Text style={styles.statLabel}>팔로워</Text>
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statItem}>
-                            <Text style={styles.statNumber}>{followStats.following ?? 0}</Text>
+                            <Text style={styles.statNumber}>{profileStats.following}</Text>
                             <Text style={styles.statLabel}>팔로잉</Text>
                         </View>
                     </View>

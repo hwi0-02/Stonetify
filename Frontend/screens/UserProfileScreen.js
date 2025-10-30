@@ -111,29 +111,11 @@ const UserProfileScreen = ({ route }) => {
         setFollowers((prev) => prev + 1);
       }
 
-      let myFollowingCount;
-      if (loggedInUser?.id) {
-        try {
-          const myProfile = await apiService.getUserProfile(loggedInUser.id);
-          myFollowingCount = myProfile?.stats?.following;
-        } catch (err) {
-          console.warn('Failed to refresh own following count', err);
-        }
-      }
-
-      if (typeof myFollowingCount === 'number') {
-        emitEvent('FOLLOW_STATUS_CHANGED', {
-          followingCount: myFollowingCount,
-          refresh: false,
-        });
-        dispatch(updateFollowStats({ following: myFollowingCount }));
-      } else {
-        emitEvent('FOLLOW_STATUS_CHANGED', {
-          followingDelta: delta,
-          refresh: true,
-        });
-        dispatch(updateFollowStats({ followingDelta: delta }));
-      }
+      emitEvent('FOLLOW_STATUS_CHANGED', {
+        followingDelta: delta,
+        refresh: false,
+      });
+      dispatch(updateFollowStats({ followingDelta: delta }));
     } catch (error) {
       Alert.alert('오류', '팔로우 처리에 실패했습니다.');
     }
