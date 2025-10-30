@@ -13,7 +13,7 @@ const placeholderProfile = require('../assets/images/placeholder_album.png');
 const UserProfileScreen = ({ route }) => {
   const navigation = useNavigation();
   const { userId } = route.params || {};
-  const { user: loggedInUser } = useSelector((state) => state.auth);
+  const { user: loggedInUser, followStats: loggedInUserFollowStats = {} } = useSelector((state) => state.auth);
   const dispatch = useDispatch();
 
   const [profile, setProfile] = useState(null);
@@ -71,6 +71,8 @@ const UserProfileScreen = ({ route }) => {
 
     const currentlyFollowing = !!profile?.isFollowing;
     const targetUserId = profileData.id;
+    const currentFollowing = loggedInUserFollowStats?.following ?? 0;
+    const currentFollowersCount = loggedInUserFollowStats?.followers ?? 0;
 
     try {
       let delta = 0;
@@ -111,11 +113,20 @@ const UserProfileScreen = ({ route }) => {
         setFollowers((prev) => prev + 1);
       }
 
+      const nextFollowing = Math.max(0, currentFollowing + delta);
+
       emitEvent('FOLLOW_STATUS_CHANGED', {
         followingDelta: delta,
+        followingCount: nextFollowing,
+        followersCount: currentFollowersCount,
         refresh: false,
       });
-      dispatch(updateFollowStats({ followingDelta: delta }));
+      dispatch(
+        updateFollowStats({
+          followers: currentFollowersCount,
+          following: nextFollowing,
+        })
+      );
     } catch (error) {
       Alert.alert('오류', '팔로우 처리에 실패했습니다.');
     }

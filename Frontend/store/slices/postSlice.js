@@ -154,9 +154,10 @@ const postSlice = createSlice({
         }
       })
       .addCase(deletePost.fulfilled, (state, action) => {
-        const postId = action.payload;
-        state.posts = state.posts.filter((post) => post.id !== postId);
-        state.savedPosts = state.savedPosts.filter((post) => post.id !== postId);
+        const deletedId = action.payload;
+        const matchesDeleted = (post) => String(post.id) === String(deletedId);
+        state.posts = state.posts.filter((post) => !matchesDeleted(post));
+        state.savedPosts = state.savedPosts.filter((post) => !matchesDeleted(post));
       })
       .addCase(fetchSavedPosts.fulfilled, (state, action) => {
         state.savedPosts = Array.isArray(action.payload) ? action.payload : [];

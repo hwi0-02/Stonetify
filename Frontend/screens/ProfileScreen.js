@@ -57,7 +57,7 @@ const ProfileScreen = ({ navigation, route }) => {
     const loadProfileStats = useCallback(async () => {
         if (!userId) return;
         try {
-            const data = await apiService.getUserProfile(userId);
+            const data = await apiService.getUserProfile(userId, { forceRefresh: true });
             const stats = data?.stats || {};
             const normalized = {
                 followers: stats.followers ?? 0,

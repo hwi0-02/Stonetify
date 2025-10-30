@@ -21,17 +21,21 @@ const HorizontalPlaylist = memo(({ title, data, onPlaylistPress, onItemPress, on
     uniqueData.push(item);
   });
 
+  const showHeader = Boolean(title) || (onSeeAll && uniqueData.length > 0);
+
   return (
     <View style={styles.container}>
-      <View style={styles.headerContainer}>
-        <Text style={styles.title}>{title}</Text>
-        {onSeeAll && uniqueData.length > 0 && (
-          <TouchableOpacity onPress={onSeeAll} style={styles.seeAllButton}>
-            <Text style={styles.seeAllText}>모두 보기</Text>
-            <Ionicons name="chevron-forward" size={16} color="#b3b3b3" />
-          </TouchableOpacity>
-        )}
-      </View>
+      {showHeader && (
+        <View style={styles.headerContainer}>
+          {title ? <Text style={styles.title}>{title}</Text> : <View />}
+          {onSeeAll && uniqueData.length > 0 && (
+            <TouchableOpacity onPress={onSeeAll} style={styles.seeAllButton}>
+              <Text style={styles.seeAllText}>모두 보기</Text>
+              <Ionicons name="chevron-forward" size={16} color="#b3b3b3" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
       <FlatList
         data={uniqueData}
         keyExtractor={(item, index) => {

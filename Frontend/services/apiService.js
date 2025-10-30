@@ -254,12 +254,41 @@ export const login = (userData) => api.post('users/login', userData).then(res =>
 export const getMe = () => api.get('users/me').then(res => res.data);
 
 // User Management APIs
-export const followUser = (following_id) => api.post('users/follow', { following_id }).then(res => res.data);
-export const unfollowUser = (following_id) => api.delete('users/unfollow', { data: { following_id } }).then(res => res.data);
+export const followUser = async (following_id) => {
+  const response = await api.post('users/follow', { following_id });
+  invalidateCacheByUrl(`users/${following_id}/profile`);
+  invalidateCacheByUrl(`users/${following_id}/followers`);
+  invalidateCacheByUrl('users/');
+  invalidateCacheByUrl('users');
+  return response.data;
+};
+
+export const unfollowUser = async (following_id) => {
+  const response = await api.delete('users/unfollow', { data: { following_id } });
+  invalidateCacheByUrl(`users/${following_id}/profile`);
+  invalidateCacheByUrl(`users/${following_id}/followers`);
+  invalidateCacheByUrl('users/');
+  invalidateCacheByUrl('users');
+  return response.data;
+};
 export const getFollowers = (userId) => api.get(`users/${userId}/followers`).then(res => res.data);
 export const getFollowing = (userId) => api.get(`users/${userId}/following`).then(res => res.data);
-export const getUserProfile = (userId) => api.get(`users/${userId}/profile`).then(res => res.data);
-export const toggleFollow = (userId) => api.post(`users/${userId}/toggle-follow`).then(res => res.data);
+export const getUserProfile = (userId, options = {}) => {
+  const { forceRefresh = false } = options;
+  if (forceRefresh) {
+    invalidateCacheByUrl(`users/${userId}/profile`);
+  }
+  const params = forceRefresh ? { _refresh: Date.now() } : undefined;
+  return api.get(`users/${userId}/profile`, params ? { params } : undefined).then(res => res.data);
+};
+export const toggleFollow = async (userId) => {
+  const response = await api.post(`users/${userId}/toggle-follow`);
+  invalidateCacheByUrl(`users/${userId}/profile`);
+  invalidateCacheByUrl(`users/${userId}/followers`);
+  invalidateCacheByUrl('users/');
+  invalidateCacheByUrl('users');
+  return response.data;
+};
 export const updateProfile = (profileData) => api.put('users/profile', profileData).then(res => res.data);
 
 // Playlist Management APIs
@@ -468,11 +497,32 @@ export const updateShareSettings = (playlistId, settings) => api.put(`playlists/
 
 // Post Management APIs
 export const getPosts = () => api.get('posts').then(res => res.data);
-export const createPost = (postData) => api.post('posts', postData).then(res => res.data);
-export const likePost = (postId) => api.post(`posts/${postId}/like`).then(res => res.data);
-export const updatePost = (postId, postData) => api.put(`posts/${postId}`, postData).then(res => res.data);
-export const deletePost = (postId) => api.delete(`posts/${postId}`).then(res => res.data);
-export const toggleSavePost = (postId) => api.post(`posts/${postId}/toggle-save`).then(res => res.data);
+export const createPost = async (postData) => {
+  const response = await api.post('posts', postData);
+  invalidateCacheByUrl('posts');
+  return response.data;
+};
+export const likePost = async (postId) => {
+  const response = await api.post(`posts/${postId}/like`);
+  invalidateCacheByUrl('posts');
+  return response.data;
+};
+export const updatePost = async (postId, postData) => {
+  const response = await api.put(`posts/${postId}`, postData);
+  invalidateCacheByUrl('posts');
+  return response.data;
+};
+export const deletePost = async (postId) => {
+  const response = await api.delete(`posts/${postId}`);
+  invalidateCacheByUrl('posts');
+  return response.data;
+};
+export const toggleSavePost = async (postId) => {
+  const response = await api.post(`posts/${postId}/toggle-save`);
+  invalidateCacheByUrl('posts');
+  invalidateCacheByUrl('posts/saved/me');
+  return response.data;
+};
 export const getSavedPosts = () => api.get('posts/saved/me').then(res => res.data);
 
 // Spotify Integration APIs

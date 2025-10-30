@@ -15,8 +15,10 @@ import {
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
+import PlaylistCard from '../components/playlists/PlaylistCard';
 import { fetchMyPlaylists } from '../store/slices/playlistSlice';
 import { createPost, updatePost } from '../store/slices/postSlice';
+import { showToast } from '../utils/toast';
 
 const WriteFeedScreen = ({ route, navigation }) => {
   const dispatch = useDispatch();
@@ -116,10 +118,10 @@ const WriteFeedScreen = ({ route, navigation }) => {
 
       if (isEditMode) {
         await dispatch(updatePost({ postId: postToEdit.id, postData: payload })).unwrap();
-        Alert.alert('완료', '피드를 수정했습니다.');
+        showToast('피드를 수정했습니다.', 2000);
       } else {
         await dispatch(createPost(payload)).unwrap();
-        Alert.alert('완료', '피드를 등록했습니다.');
+        showToast('피드를 등록했습니다.', 2000);
       }
       navigation.goBack();
     } catch (error) {
@@ -200,22 +202,11 @@ const WriteFeedScreen = ({ route, navigation }) => {
               <Text style={styles.selectButtonText}>플레이리스트 선택하기</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity
-              style={styles.selectedPlaylist}
+            <PlaylistCard
+              playlist={selectedPlaylist}
               onPress={() => setPlaylistModalVisible(true)}
-            >
-              <HorizontalPlaylist
-                data={[selectedPlaylist]}
-                onItemPress={() => setPlaylistModalVisible(true)}
-                coverOnly
-              />
-              <View style={styles.selectedInfo}>
-                <Text style={styles.selectedTitle}>{selectedPlaylist.title}</Text>
-                {selectedPlaylist.description ? (
-                  <Text style={styles.selectedMeta}>{selectedPlaylist.description}</Text>
-                ) : null}
-              </View>
-            </TouchableOpacity>
+              showActions={false}
+            />
           )}
           {playlistError ? <Text style={styles.errorText}>{playlistError}</Text> : null}
         </View>
@@ -242,7 +233,6 @@ const WriteFeedScreen = ({ route, navigation }) => {
               title={null}
               data={userPlaylists}
               onItemPress={(item) => handlePlaylistSelect(item)}
-              coverOnly
             />
           </ScrollView>
         </View>
@@ -310,18 +300,6 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   selectButtonText: { color: '#1DB954', fontSize: 16, marginLeft: 8 },
-  selectedPlaylist: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#181818',
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#282828',
-  },
-  selectedInfo: { flex: 1, marginLeft: 16 },
-  selectedTitle: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
-  selectedMeta: { color: '#b3b3b3', fontSize: 14, marginTop: 4 },
   bottomSpacing: { height: 40 },
   modalContainer: { flex: 1, backgroundColor: '#121212' },
   modalHeader: {

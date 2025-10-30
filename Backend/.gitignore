@@ -9,3 +9,10 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Expo files
+.expo/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

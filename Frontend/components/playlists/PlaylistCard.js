@@ -36,7 +36,7 @@ const PlaylistThumbnail = memo(({ coverImages, isLiked, onLikePress }) => {
 });
 
 // 플레이리스트 카드 컴포넌트 - 메모이제이션
-const PlaylistCard = memo(({ playlist, onPress, showActions = true, coverOnly = false }) => {
+const PlaylistCard = memo(({ playlist, onPress, showActions = true, coverOnly = false, style }) => {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
   const { likedPlaylists } = useSelector((state) => state.playlist);
@@ -80,7 +80,7 @@ const PlaylistCard = memo(({ playlist, onPress, showActions = true, coverOnly = 
   };
 
   return (
-    <TouchableOpacity style={styles.cardContainer} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity style={[styles.cardContainer, style]} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.imageContainer}>
         <PlaylistThumbnail 
           coverImages={coverImages} 

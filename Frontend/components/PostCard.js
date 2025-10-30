@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { deletePost } from '../store/slices/postSlice';
+import { showToast } from '../utils/toast';
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
@@ -12,6 +13,7 @@ const PostCard = memo(({ item, onPress, onLikePress, onSavePress, onSharePress, 
   const dispatch = useDispatch();
   const { user: loggedInUser } = useSelector(state => state.auth);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
 
   const postUser = item?.user || {};
   const playlist = item?.playlist || {};
@@ -54,18 +56,20 @@ const PostCard = memo(({ item, onPress, onLikePress, onSavePress, onSharePress, 
 
   const handleDelete = () => {
     setMenuVisible(false);
-    Alert.alert(
-      '게시물 삭제',
-      '정말로 이 게시물을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.',
-      [
-        { text: '취소', style: 'cancel' },
-        {
-          text: '삭제',
-          style: 'destructive',
-          onPress: () => dispatch(deletePost(item.id)),
-        },
-      ],
-    );
+    setDeleteConfirmVisible(true);
+  };
+
+  const confirmDeletePost = () => {
+    dispatch(deletePost(item.id))
+      .unwrap()
+      .then(() => {
+        setDeleteConfirmVisible(false);
+        showToast('피드를 삭제했습니다.', 2000);
+      })
+      .catch((error) => {
+        setDeleteConfirmVisible(false);
+        Alert.alert('오류', error?.message || '피드 삭제에 실패했습니다.');
+      });
   };
 
   const handleEdit = () => {
@@ -161,6 +165,36 @@ const PostCard = memo(({ item, onPress, onLikePress, onSavePress, onSharePress, 
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
+            </Modal>
+          )}
+
+          {isMyPost && (
+            <Modal
+              visible={deleteConfirmVisible}
+              animationType="fade"
+              transparent
+              onRequestClose={() => setDeleteConfirmVisible(false)}
+            >
+              <View style={styles.confirmOverlay}>
+                <View style={styles.confirmContainer}>
+                  <Text style={styles.confirmTitle}>피드를 삭제할까요?</Text>
+                  <Text style={styles.confirmDescription}>삭제하면 되돌릴 수 없습니다.</Text>
+                  <View style={styles.confirmButtonRow}>
+                    <TouchableOpacity
+                      style={[styles.confirmButton, styles.confirmCancelButton]}
+                      onPress={() => setDeleteConfirmVisible(false)}
+                    >
+                      <Text style={[styles.confirmButtonText, styles.confirmCancelText]}>취소</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.confirmButton, styles.confirmDeleteButton]}
+                      onPress={confirmDeletePost}
+                    >
+                      <Text style={[styles.confirmButtonText, styles.confirmDeleteText]}>삭제</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
             </Modal>
           )}
         </>
@@ -313,6 +347,67 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: '#ff4d4d',
+  },
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  confirmContainer: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 16,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E1E1E',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  confirmDescription: {
+    fontSize: 14,
+    color: '#555',
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  confirmButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  confirmCancelButton: {
+    marginRight: 12,
+    backgroundColor: '#F2F2F2',
+  },
+  confirmDeleteButton: {
+    backgroundColor: '#6C4DFF',
+  },
+  confirmButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  confirmCancelText: {
+    color: '#6C4DFF',
+  },
+  confirmDeleteText: {
+    color: '#ffffff',
   },
 });
 
