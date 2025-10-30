@@ -1,9 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDispatch, useSelector } from 'react-redux';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import { getMe, logout } from '../store/slices/authSlice';
+import { getMe, logout, updateFollowStats } from '../store/slices/authSlice';
 import { fetchMyPlaylists, fetchLikedPlaylists } from '../store/slices/playlistSlice';
 import { fetchRecentPlaylists } from '../store/slices/recentPlaylistsSlice';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
@@ -13,17 +13,25 @@ import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { showToast } from '../utils/toast';
 import { exchangeSpotifyCode, getPremiumStatus, fetchSpotifyProfile, clearSpotifySession } from '../store/slices/spotifySlice';
+import apiService from '../services/apiService';
+import { subscribe as subscribeEvent } from '../utils/eventBus';
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
 const ProfileScreen = ({ navigation, route }) => {
     const dispatch = useDispatch();
     const { user } = useSelector((state) => state.auth);
+    const followStats = useSelector(
+        (state) => state.auth.followStats || { followers: 0, following: 0 }
+    );
     const { userPlaylists } = useSelector((state) => state.playlist);
     const likedPlaylists = useSelector((state) => state.playlist.likedPlaylists);
     const recentPlaylists = useSelector((state) => state.recentPlaylists.items);
     const spotify = useSelector((state) => state.spotify);
     const userId = user?.id || user?.userId;
+    const [profileStats, setProfileStats] = useState({ followers: 0, following: 0 });
+    const followStatsRef = useRef(profileStats);
+
     // Spotify 인증 훅 사용 (입력: userId, 효과: 인증 플로우 관리)
     const { connectSpotify, redirectUri, authError } = useSpotifyAuth(userId);
 
@@ -36,6 +44,68 @@ const ProfileScreen = ({ navigation, route }) => {
         dispatch(fetchLikedPlaylists());
         dispatch(fetchRecentPlaylists());
     }, [dispatch]);
+
+    useEffect(() => {
+        const normalized = {
+            followers: followStatsFromStore.followers ?? 0,
+            following: followStatsFromStore.following ?? 0,
+        };
+        followStatsRef.current = normalized;
+        setProfileStats(normalized);
+    }, [followStatsFromStore]);
+
+    const loadProfileStats = useCallback(async () => {
+        if (!userId) return;
+        try {
+            const data = await apiService.getUserProfile(userId);
+            const stats = data?.stats || {};
+            dispatch(
+                updateFollowStats({
+                    followers: stats.followers ?? 0,
+                    following: stats.following ?? 0,
+                })
+            );
+        } catch (error) {
+            console.warn('Failed to load profile stats', error);
+        }
+    }, [userId, dispatch]);
+
+    useEffect(() => {
+        loadProfileStats();
+    }, [loadProfileStats]);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadProfileStats();
+        }, [loadProfileStats])
+    );
+
+    useEffect(() => {
+        const unsubscribe = subscribeEvent('FOLLOW_STATUS_CHANGED', (payload = {}) => {
+            const {
+                followersDelta = 0,
+                followingDelta = 0,
+                followersCount,
+                followingCount,
+                refresh = true,
+            } = payload;
+
+            dispatch(
+                updateFollowStats({
+                    followers: followersCount,
+                    following: followingCount,
+                    followersDelta,
+                    followingDelta,
+                })
+            );
+
+            if (refresh && typeof followingCount !== 'number') {
+                loadProfileStats();
+            }
+        });
+
+        return unsubscribe;
+    }, [dispatch, loadProfileStats]);
 
     if (!user) {
         return <View style={styles.centered}><ActivityIndicator size="large" color="#8A2BE2" /></View>;
@@ -332,7 +402,12 @@ const ProfileScreen = ({ navigation, route }) => {
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statItem}>
-                            <Text style={styles.statNumber}>0</Text>
+                            <Text style={styles.statNumber}>{followStats.followers ?? 0}</Text>
+                            <Text style={styles.statLabel}>팔로워</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={styles.statNumber}>{followStats.following ?? 0}</Text>
                             <Text style={styles.statLabel}>팔로잉</Text>
                         </View>
                     </View>
@@ -521,8 +596,8 @@ const styles = StyleSheet.create({
         backgroundColor: '#1a1a1a',
         borderRadius: 12,
         paddingVertical: 18,
-        paddingHorizontal: 40,
-        minWidth: 280,
+        paddingHorizontal: 24,
+        minWidth: 300,
     },
     statItem: {
         alignItems: 'center',
@@ -533,7 +608,7 @@ const styles = StyleSheet.create({
         width: 1,
         height: 24,
         backgroundColor: '#404040',
-        marginHorizontal: 24,
+        marginHorizontal: 20,
     },
     statNumber: {
         color: '#ffffff',

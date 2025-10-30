@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import SongListItem from '../components/SongListItem';
+import DraggableFlatList from 'react-native-draggable-flatlist';
 
 const hasPlayableIdentifier = (song) => {
   if (!song) return false;
@@ -100,6 +101,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [toastMessage, setToastMessage] = useState('');
   const toastTimerRef = useRef(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [songsData, setSongsData] = useState([]);
 
   useEffect(() => {
     if (playlistId) {
@@ -156,9 +158,13 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     }));
   }, [dispatch, currentPlaylist?.id]);
 
+  useEffect(() => {
+    setSongsData(currentPlaylist?.songs ?? []);
+  }, [currentPlaylist?.songs]);
+
   const playableSongs = useMemo(
-    () => filterPlayableSongs(currentPlaylist?.songs || []),
-    [currentPlaylist?.songs]
+    () => filterPlayableSongs(songsData),
+    [songsData]
   );
 
   const isOwner = useMemo(() => {
@@ -249,7 +255,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
           params: {
             postConnect: {
               action: 'playAll',
-              playlist: currentPlaylist.songs,
+              playlist: songsData,
             }
           }
         });
@@ -268,7 +274,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       const message = typeof error === 'string' ? error : error?.message || '재생에 실패했습니다.';
       Alert.alert('재생 실패', message);
     }
-  }, [dispatch, navigation, playableSongs, spotifyAccessToken, spotifyIsPremium]);
+  }, [dispatch, navigation, playableSongs, spotifyAccessToken, spotifyIsPremium, songsData]);
 
   const handleAddSongs = useCallback(() => {
     if (!isOwner) {
@@ -528,7 +534,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
 
   const renderHeader = () => (
     <LinearGradient colors={['#4c1e6e', '#121212']} style={styles.header}>
-      <PlaylistHeaderImage songs={currentPlaylist.songs || []} />
+      <PlaylistHeaderImage songs={songsData} />
       <Text style={styles.title}>{currentPlaylist.title}</Text>
       {currentPlaylist.description ? (
         <Text style={styles.description}>{currentPlaylist.description}</Text>
@@ -611,6 +617,53 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     console.log('hamburger pressed:', song?.id);
   };
 
+  const isWeb = Platform.OS === 'web';
+
+  const renderSongList = () => {
+    const listProps = {
+      data: songsData,
+      keyExtractor: (item, index) => `${playlistId}:${item?.id ?? item?.spotify_id ?? index}`,
+      renderItem: ({ item, index, drag, isActive }) => {
+        if (!item) return null;
+        return (
+          <SongListItem
+            item={item}
+            onPress={() => handleSongPress(item)}
+            onRemovePress={handleRemoveTrack}
+            showRemoveButton
+            showLikeButton
+            onLikePress={handleToggleSongLike}
+            liked={!!(likedSongsMap[item?.id] || likedSongsMap[item?.spotify_id])}
+            showHamburgerButton
+            onHamburgerPress={handleHamburgerPress}
+            onDrag={!isWeb ? drag : undefined}
+            isDragging={!isWeb && isActive}
+          />
+        );
+      },
+      ListHeaderComponent: renderHeader,
+      showsVerticalScrollIndicator: true,
+      ListEmptyComponent: () => (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="musical-notes-outline" size={48} color="#404040" />
+          <Text style={styles.emptyText}>이 플레이리스트에는 아직 곡이 없습니다</Text>
+          {isOwner && <Text style={styles.emptySubtext}>곡을 추가해보세요</Text>}
+        </View>
+      ),
+    };
+
+    if (isWeb) {
+      return <FlatList {...listProps} />;
+    }
+
+    return (
+      <DraggableFlatList
+        {...listProps}
+        onDragEnd={({ data }) => setSongsData(data)}
+      />
+    );
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.fixedHeader}>
@@ -619,35 +672,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
       
-      <FlatList
-        data={currentPlaylist.songs || []}
-        keyExtractor={(item, index) => `${playlistId}:${item?.id ?? item?.spotify_id ?? index}`}
-        renderItem={({ item, index }) => {
-          if (!item) return null;
-          return (
-            <SongListItem 
-              item={item}
-              onPress={() => handleSongPress(item)}
-              onRemovePress={handleRemoveTrack}
-              showRemoveButton
-              showLikeButton
-              onLikePress={handleToggleSongLike}
-              liked={!!(likedSongsMap[item?.id] || likedSongsMap[item?.spotify_id])}
-              showHamburgerButton
-              onHamburgerPress={handleHamburgerPress}
-            />
-          );
-        }}
-        ListHeaderComponent={renderHeader}
-        showsVerticalScrollIndicator={true}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="musical-notes-outline" size={48} color="#404040" />
-            <Text style={styles.emptyText}>이 플레이리스트에는 아직 곡이 없습니다</Text>
-            {isOwner && <Text style={styles.emptySubtext}>곡을 추가해보세요</Text>}
-          </View>
-        )}
-      />
+      {renderSongList()}
 
       <Modal
         visible={menuVisible}

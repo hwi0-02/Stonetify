@@ -10,6 +10,10 @@ const initialState = {
   token: null,
   status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
   error: null,
+  followStats: {
+    followers: 0,
+    following: 0,
+  },
 };
 
 // ==================== ASYNC THUNKS ====================
@@ -127,6 +131,28 @@ const authSlice = createSlice({
       state.status = 'idle';
       state.error = null;
     },
+    updateFollowStats(state, action) {
+      const {
+        followers,
+        following,
+        followersDelta = 0,
+        followingDelta = 0,
+      } = action.payload || {};
+
+      const prevFollowers = state.followStats?.followers ?? 0;
+      const prevFollowing = state.followStats?.following ?? 0;
+
+      state.followStats = {
+        followers:
+          typeof followers === 'number'
+            ? followers
+            : Math.max(0, prevFollowers + followersDelta),
+        following:
+          typeof following === 'number'
+            ? following
+            : Math.max(0, prevFollowing + followingDelta),
+      };
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -157,6 +183,7 @@ const authSlice = createSlice({
       .addCase(logout.fulfilled, (state) => {
         state.user = null;
         state.token = null;
+        state.followStats = { followers: 0, following: 0 };
       })
       .addCase(getMe.fulfilled, (state, action) => {
         state.user = action.payload;
@@ -183,5 +210,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { resetAuthStatus } = authSlice.actions;
+export const { resetAuthStatus, updateFollowStats } = authSlice.actions;
 export default authSlice.reducer;

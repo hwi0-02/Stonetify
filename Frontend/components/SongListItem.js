@@ -8,26 +8,34 @@ const placeholderAlbum = require('../assets/images/placeholder_album.png');
 const SongListItem = ({
   item,
   onPress,
-  onAddPress,
   onRemovePress,
-  showRemoveButton = false,
-  showLikeButton = false,
+  showRemoveButton,
+  showLikeButton,
   onLikePress,
-  liked = false,
-  showPlayButton = false,
-  onPlayPress,
-  showHamburgerButton = false,
+  liked,
+  showHamburgerButton,
   onHamburgerPress,
+  onDrag,
+  isDragging,
+  showPlayButton,
+  onPlayPress,
+  onAddPress,
 }) => {
   return (
-    <TouchableOpacity style={styles.container} onPress={() => onPress && onPress(item)} disabled={!onPress}>
+    <TouchableOpacity
+      style={[styles.container, isDragging && styles.dragging]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
       {showHamburgerButton && (
         <TouchableOpacity
           style={styles.hamburgerButton}
-          onPress={() => onHamburgerPress && onHamburgerPress(item)}
-          disabled={!onHamburgerPress}
+          onPress={onHamburgerPress}
+          onLongPress={onDrag}
+          delayLongPress={120}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="menu" size={26} color="#fff" />
+          <Ionicons name="reorder-three-outline" size={22} color="#fff" />
         </TouchableOpacity>
       )}
       <Image
@@ -77,12 +85,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#222',
   },
+  dragging: {
+    opacity: 0.7,
+    transform: [{ scale: 0.98 }],
+  },
   hamburgerButton: {
-    width: 50,
-    height: 50,
-    alignItems: 'center',
+    paddingHorizontal: 8,
     justifyContent: 'center',
-    marginRight: 0,
   },
   albumCover: {
     width: 50,

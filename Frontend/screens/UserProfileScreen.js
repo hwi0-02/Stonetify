@@ -1,10 +1,12 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
 import apiService from '../services/apiService';
+import { emit as emitEvent } from '../utils/eventBus';
+import { updateFollowStats } from '../store/slices/authSlice';
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
 
@@ -12,6 +14,7 @@ const UserProfileScreen = ({ route }) => {
   const navigation = useNavigation();
   const { userId } = route.params || {};
   const { user: loggedInUser } = useSelector((state) => state.auth);
+  const dispatch = useDispatch();
 
   const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,23 +49,91 @@ const UserProfileScreen = ({ route }) => {
     }, [userId, isMyProfile])
   );
 
+  const {
+    user: profileData,
+    playlists: profilePlaylists = [],
+    stats: profileStats = {},
+    isFollowing = false,
+  } = profile || {};
+
+  const [followers, setFollowers] = useState(profileStats.followers || 0);
+
+  useEffect(() => {
+    setFollowers(profileStats.followers || 0);
+  }, [profileStats.followers]);
+
   const handleFollowToggle = async () => {
-    if (!userId) return;
+    if (!profileData?.id) return;
     if (!loggedInUser) {
       Alert.alert('로그인이 필요한 기능입니다.');
       return;
     }
+
+    const currentlyFollowing = !!profile?.isFollowing;
+    const targetUserId = profileData.id;
+
     try {
-      const result = await apiService.toggleFollow(userId);
-      setProfile((prev) =>
-        prev
-          ? {
-              ...prev,
-              isFollowing: result.isFollowing,
-              stats: { ...prev.stats, followers: result.followersCount },
-            }
-          : prev
-      );
+      let delta = 0;
+
+      if (currentlyFollowing) {
+        await apiService.unfollowUser(targetUserId);
+        delta = -1;
+
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                isFollowing: false,
+                stats: {
+                  ...prev.stats,
+                  followers: Math.max(0, (prev.stats?.followers ?? followers) - 1),
+                },
+              }
+            : prev
+        );
+        setFollowers((prev) => Math.max(0, prev - 1));
+      } else {
+        await apiService.followUser(targetUserId);
+        delta = 1;
+
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                isFollowing: true,
+                stats: {
+                  ...prev.stats,
+                  followers: (prev.stats?.followers ?? followers) + 1,
+                },
+              }
+            : prev
+        );
+        setFollowers((prev) => prev + 1);
+      }
+
+      let myFollowingCount;
+      if (loggedInUser?.id) {
+        try {
+          const myProfile = await apiService.getUserProfile(loggedInUser.id);
+          myFollowingCount = myProfile?.stats?.following;
+        } catch (err) {
+          console.warn('Failed to refresh own following count', err);
+        }
+      }
+
+      if (typeof myFollowingCount === 'number') {
+        emitEvent('FOLLOW_STATUS_CHANGED', {
+          followingCount: myFollowingCount,
+          refresh: false,
+        });
+        dispatch(updateFollowStats({ following: myFollowingCount }));
+      } else {
+        emitEvent('FOLLOW_STATUS_CHANGED', {
+          followingDelta: delta,
+          refresh: true,
+        });
+        dispatch(updateFollowStats({ followingDelta: delta }));
+      }
     } catch (error) {
       Alert.alert('오류', '팔로우 처리에 실패했습니다.');
     }
@@ -92,8 +163,6 @@ const UserProfileScreen = ({ route }) => {
     );
   }
 
-  const { user, playlists = [], stats = {}, isFollowing } = profile;
-
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -107,23 +176,23 @@ const UserProfileScreen = ({ route }) => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.profileSection}>
           <Image
-            source={user.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile}
+            source={profileData?.profile_image_url ? { uri: profileData.profile_image_url } : placeholderProfile}
             style={styles.avatar}
           />
-          <Text style={styles.displayName}>{user.display_name || '사용자'}</Text>
+          <Text style={styles.displayName}>{profileData?.display_name || '사용자'}</Text>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{playlists.length}</Text>
+              <Text style={styles.statValue}>{profilePlaylists.length}</Text>
               <Text style={styles.statLabel}>플레이리스트</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.followers || 0}</Text>
+              <Text style={styles.statValue}>{followers}</Text>
               <Text style={styles.statLabel}>팔로워</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{stats.following || 0}</Text>
+              <Text style={styles.statValue}>{profileStats.following || 0}</Text>
               <Text style={styles.statLabel}>팔로잉</Text>
             </View>
           </View>
@@ -146,8 +215,8 @@ const UserProfileScreen = ({ route }) => {
         </View>
 
         <HorizontalPlaylist
-          title={`${user.display_name || '사용자'}의 플레이리스트`}
-          data={playlists}
+          title={`${profileData?.display_name || '사용자'}의 플레이리스트`}
+          data={profilePlaylists}
           onItemPress={(item) => navigation.navigate('PlaylistDetail', { playlistId: item.id })}
         />
       </ScrollView>
