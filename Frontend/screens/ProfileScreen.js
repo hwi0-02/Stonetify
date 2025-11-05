@@ -722,10 +722,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         borderRadius: 20,
         borderWidth: 1,
-        borderColor: '#8A2BE2',
+        borderColor: '#b04ad8ff',
     },
     disconnectButtonText: {
-        color: '#8A2BE2',
+        color: '#b04ad8ff',
         fontSize: 13,
         fontWeight: '600',
     },

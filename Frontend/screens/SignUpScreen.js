@@ -82,7 +82,9 @@ const SignUpScreen = ({ navigation }) => {
           placeholder="비밀번호 확인"
           secureTextEntry
         />
-        <AuthButton title="가입하기" onPress={handleSignUp} loading={status === 'loading'} />
+        <AuthButton title="가입하기" 
+        onPress={handleSignUp} loading={status === 'loading'} 
+        style={styles.button}/>
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
           <Text style={styles.switchText}>이미 계정이 있으신가요? {' '}
             <Text style={{ fontWeight: 'bold', color:'#cfc6c6ff' }}>로그인</Text></Text>
@@ -118,9 +120,9 @@ const styles = StyleSheet.create({
        marginTop: 20,
     },
     switchText: {
-        color: '#c272ccff', // 보라색 텍스트
+        color: '#c272ccff',
         marginTop: 20,
-        fontSize: 16,
+        fontSize: 15,
     }
 });
 

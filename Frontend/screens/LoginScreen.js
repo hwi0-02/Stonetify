@@ -211,7 +211,7 @@ const LoginScreen = ({ navigation }) => {
           title="이메일 로그인"
           onPress={handleLogin}
           loading={status === 'loading'}
-          style={{ width: '100%', marginBottom: 10 }}
+          style={{ width: '100%', marginTop: 10 }}
         />
 
         <TouchableOpacity
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 25,
+    marginVertical: 20,
     width: '100%',
   },
   dividerLine: {
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
   dividerText: { 
-    marginHorizontal: 12, 
+    marginHorizontal: 10, 
     color: '#a7a7a7', 
     fontSize: 14,
     fontWeight: '500',

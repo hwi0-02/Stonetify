@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
         paddingBottom: 50,
     },
     loginText: {
-        color: '#9753a0ff',
+        color: '#b686bdff',
         textAlign: 'center',
         marginTop: 15,
     }
