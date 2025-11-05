@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   SafeAreaView,
   View,
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
   },
   saveButtonActive: { 
     paddingHorizontal: 20,
-    paddingVertical: 7,
+    paddingVertical: 6,
     backgroundColor: '#b04ad8ff',
     borderRadius: 20,
     fontSize: 15,
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: { 
     paddingHorizontal: 20,
-    paddingVertical: 7,
+    paddingVertical: 5,
     color: '#6a6a6a', 
     fontSize: 15,
     fontWeight: '600',

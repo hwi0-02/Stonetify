@@ -50,7 +50,7 @@ const WelcomeScreen = ({ navigation }) => {
     >
       <View style={styles.content}>
         <Image source={logoPurple} style={styles.logo} />
-        <Text style={styles.title}>Stonetify</Text>
+        <Text style={styles.maintitle}>Stonetify</Text>
         <Text style={styles.subtitle}>음악으로 하나되는 우리</Text>
       </View>
       <View style={styles.footer}>
@@ -75,7 +75,7 @@ const WelcomeScreen = ({ navigation }) => {
           icon={naverLogo}
         />
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-          <Text style={styles.loginText}>이미 계정이 있으신가요?{' '}
+          <Text style={styles.loginText}>이미 계정이 있으신가요?{'  '}
           <Text style={{ fontWeight: 'bold', color:'#cfc6c6ff' }}>로그인</Text></Text>
         </TouchableOpacity>
       </View>
@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
         paddingBottom: 50,
     },
     loginText: {
-        color: '#c272ccff',
+        color: '#9753a0ff',
         textAlign: 'center',
         marginTop: 15,
     }

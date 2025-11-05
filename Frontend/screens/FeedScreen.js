@@ -42,6 +42,7 @@ const FeedScreen = ({ navigation }) => {
 
   const [tab, setTab] = useState('latest');
   const [refreshing, setRefreshing] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
 
   // 초기 로드 시에만 데이터를 가져옴
   useEffect(() => {
@@ -141,11 +142,12 @@ const FeedScreen = ({ navigation }) => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>피드</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => navigation.navigate('Saved')} style={styles.iconButton}>
-            <Ionicons name="bookmark-outline" size={22} color="#ffffff" />
+          <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.menumodal}>
+            <Ionicons name="menu-outline" size={28} color="#ffffff" />
           </TouchableOpacity>
         </View>
       </View>
+
       <View style={styles.userRow}>
         <Image
           source={user?.profile_image_url ? { uri: user.profile_image_url } : placeholderProfile}
@@ -274,15 +276,14 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: '#ffffff', fontSize: 28, fontWeight: '700', letterSpacing: -0.5 },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
-  iconButton: {
+  menumodal: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  userRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 16 },
+  userRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#333' },
   username: { color: '#ffffff', fontSize: 18, marginLeft: 12, flex: 1, fontWeight: '600' },
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#282828' },

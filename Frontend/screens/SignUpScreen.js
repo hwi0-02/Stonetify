@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     },
     switchText: {
         color: '#c272ccff', // 보라색 텍스트
-        marginTop: 10,
+        marginTop: 20,
         fontSize: 16,
     }
 });

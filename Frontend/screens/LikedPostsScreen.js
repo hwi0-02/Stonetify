@@ -48,7 +48,7 @@ const LikedPostsScreen = () => {
   if ((likedStatus === 'loading' || !user) && likedPosts.length === 0) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#1DB954" />
+        <ActivityIndicator size="large" color="#b04ad8ff" />
       </View>
     );
   }
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
       marginBottom: 24,
   },
   retryButton: { // 다시 시도 버튼
-      backgroundColor: '#1DB954',
+      backgroundColor: '#b04ad8ff',
       paddingHorizontal: 24,
       paddingVertical: 12,
       borderRadius: 24,

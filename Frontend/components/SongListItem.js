@@ -59,7 +59,7 @@ const SongListItem = memo(({
       )}
       {showLikeButton && (
         <TouchableOpacity onPress={() => onLikePress && onLikePress(item)} style={styles.likeButton}>
-          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={22} color={liked ? '#1DB954' : '#fff'} />
+          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={22} color={liked ? '#d84753ff' : '#fff'} />
         </TouchableOpacity>
       )}
       {showRemoveButton && onRemovePress && (
