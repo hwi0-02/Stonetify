@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  Image,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
@@ -131,6 +132,9 @@ const LoginScreen = ({ navigation }) => {
   return (
     <LinearGradient colors={['#121212', '#211E24']} style={styles.background}>
       <ScrollView contentContainerStyle={styles.container}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="chevron-back" size={28} color="#ffffff" />
+        </TouchableOpacity>
         {/* 연결 상태 표시 */}
         <View style={styles.connectionStatus}>
           <Ionicons
@@ -210,6 +214,12 @@ const LoginScreen = ({ navigation }) => {
           style={{ width: '100%', marginBottom: 10 }}
         />
 
+        <TouchableOpacity
+          style={styles.forgotPasswordLink}
+          onPress={() => navigation.navigate('ResetPassword')}>
+          <Text style={styles.forgotPasswordText}>비밀번호를 잊으셨나요?</Text>
+        </TouchableOpacity>
+
         {/* 소셜 로그인 구분선 */}
         <View style={styles.dividerContainer}>
           <View style={styles.dividerLine} />
@@ -217,28 +227,23 @@ const LoginScreen = ({ navigation }) => {
           <View style={styles.dividerLine} />
         </View>
 
-        <AuthButton
-          title="카카오로 로그인"
-          onPress={handleKakaoLogin}
-          loading={isKakaoConnecting}
-          style={{ width: '100%', marginBottom: 10, backgroundColor: '#FEE500' }}
-          textStyle={{ color: '#000000' }}
-          icon={kakaoLogo}
-        />
-        <AuthButton
-          title="네이버로 로그인"
-          onPress={handleNaverLogin}
-          loading={isNaverConnecting}
-          style={{ width: '100%', marginBottom: 10, backgroundColor: '#03C75A' }}
-          icon={naverLogo}
-        />
+        {/* 👇 [수정] 이 부분을 AuthButton 대신 원형 버튼으로 변경합니다 */}
+        <View style={styles.socialLoginContainer}>
+          <TouchableOpacity
+            style={[styles.socialButton, { backgroundColor: '#FEE500' }]}
+            onPress={handleKakaoLogin}
+          >
+            <Image source={kakaoLogo} style={styles.socialLogo} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.socialButton, { backgroundColor: '#03C75A' }]}
+            onPress={handleNaverLogin}
+          >
+            <Image source={naverLogo} style={styles.socialLogo} />
+          </TouchableOpacity>
+        </View>
 
         {/* 하단 링크 */}
-        <TouchableOpacity
-          style={styles.forgotPasswordLink}
-          onPress={() => navigation.navigate('ResetPassword')}>
-          <Text style={styles.forgotPasswordText}>비밀번호를 잊으셨나요?</Text>
-        </TouchableOpacity>
 
         <TouchableOpacity onPress={() => navigation.navigate('SignUp')}>
           <Text style={styles.switchText}>
@@ -259,6 +264,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 30,
     paddingVertical: 40,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 35,
+    left: 15,
+    zIndex: 1,
   },
   connectionStatus: {
     flexDirection: 'row',
@@ -305,45 +316,56 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  dividerText: { 
-    marginHorizontal: 12, 
-    color: '#a7a7a7', 
+  dividerText: {
+    marginHorizontal: 12,
+    color: '#a7a7a7',
     fontSize: 14,
     fontWeight: '500',
   },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingVertical: 12,
-    borderRadius: 6,
-    marginBottom: 10,
-  },
-  socialText: { 
-    marginLeft: 8, 
-    fontSize: 15, 
-    fontWeight: '600' 
-  },
-  switchText: { 
-    color: '#a7a7a7', 
-    marginTop: 15, 
+  switchText: {
+    color: '#a7a7a7',
+    marginTop: 20,
     fontSize: 15,
     textAlign: 'center',
   },
   switchTextHighlight: {
-    color: '#c272ccff',
+    color: '#9753a0ff',
     fontWeight: '600',
   },
   forgotPasswordLink: { 
     marginTop: 20, 
     marginBottom: 5 
   },
-  forgotPasswordText: { 
-    color: '#1DB954', 
-    fontSize: 14, 
+  forgotPasswordText: {
+    color: '#1DB954',
+    fontSize: 14,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  socialLoginContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 16,
+  },
+  socialButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+  },
+  socialLogo: {
+    width: 28,
+    height: 28,
+    resizeMode: 'contain',
   },
 });
 

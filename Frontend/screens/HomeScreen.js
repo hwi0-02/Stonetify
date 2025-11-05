@@ -224,8 +224,8 @@ const HomeScreen = ({ navigation }) => {
             onPress={() => navigation.navigate('CreatePlaylist')}
           >
             <View style={styles.quickButtonContent}>
-              <Ionicons name="add" size={18} color="#121212" />
-              <Text style={styles.quickButtonText}>플레이리스트 만들기</Text>
+              <Ionicons name="add" size={18} color="#ffffffff" />
+              <Text style={styles.quickButtonText}>새 플레이리스트</Text>
             </View>
           </TouchableOpacity>
 
@@ -339,8 +339,9 @@ const HomeScreen = ({ navigation }) => {
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>피드</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Feed')}>
-            <Text style={styles.seeAllText}>이동하기 &gt;</Text>
+          <TouchableOpacity style={styles.seeAllContainer} onPress={() => navigation.navigate('Feed')}>
+            <Text style={styles.seeAllText}>이동하기</Text>
+            <Ionicons name="chevron-forward" size={16} color="#b3b3b3" />
           </TouchableOpacity>
         </View>
 
@@ -397,7 +398,7 @@ const styles = StyleSheet.create({
   logo: {
     width: isWeb ? 110 : isMobile ? 120 : 115,
     height: isWeb ? 100 : isMobile ? 100 : 100,
-    top: isWeb ? 10 : isMobile ? 15 : 8,
+    top: isWeb ? 10 : isMobile ? 0 : 8,
     contentFit: 'contain',
     marginLeft: -5
   },
@@ -446,7 +447,7 @@ const styles = StyleSheet.create({
   },
   quickButtonText: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     marginLeft: 8,
     textTransform: 'uppercase',
@@ -468,9 +469,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.5,
   },
+  seeAllContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   seeAllText: {
     color: '#b3b3b3',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   feedContainer: {

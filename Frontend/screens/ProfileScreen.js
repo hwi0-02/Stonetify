@@ -367,7 +367,7 @@ const ProfileScreen = ({ navigation, route }) => {
                             style={styles.profileImage}
                         />
                         <View style={styles.profileBadge}>
-                            <Ionicons name="person" size={16} color="#1DB954" />
+                            <Ionicons name="person" size={16} color="#cfcfcfff" />
                         </View>
                     </View>
                     <Text style={styles.displayName}>{user.display_name}</Text>
@@ -391,12 +391,12 @@ const ProfileScreen = ({ navigation, route }) => {
 
                 <View style={styles.actionButtonsContainer}>
                     <TouchableOpacity style={styles.primaryActionButton} onPress={() => navigation.navigate('CreatePlaylist')}>
-                        <Ionicons name="add" size={20} color="#121212" />
+                        <Ionicons name="add" size={20} color="#ffffffff" />
                         <Text style={styles.primaryActionText}>새 플레이리스트</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.secondaryActionButton} onPress={connectSpotify}>
-                        <FontAwesome5 name="spotify" size={18} color={spotify?.isPremium ? '#1DB954' : '#ffffff'} />
+                        <FontAwesome5 name="spotify" size={18} color={spotify?.isPremium ? '#1DB954' : '#1DB954'} />
                         <Text style={styles.secondaryActionText}>{spotify?.isPremium ? 'Spotify 연결됨' : 'Spotify 연결'}</Text>
                     </TouchableOpacity>
                 </View>
@@ -633,7 +633,7 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
     primaryActionText: {
-        color: '#121212',
+        color: '#ffffffff',
         fontSize: 14,
         fontWeight: '700',
         marginLeft: 8,

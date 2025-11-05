@@ -142,8 +142,8 @@ const FeedScreen = ({ navigation }) => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>피드</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.iconButton}>
-            <Ionicons name="ellipsis-horizontal" size={22} color="#ffffff" />
+          <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.menumodal}>
+            <Ionicons name="menu-outline" size={28} color="#ffffff" />
           </TouchableOpacity>
         </View>
       </View>
@@ -275,15 +275,14 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: '#ffffff', fontSize: 28, fontWeight: '700', letterSpacing: -0.5 },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
-  iconButton: {
+  menumodal: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  userRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 16 },
+  userRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#333' },
   username: { color: '#ffffff', fontSize: 18, marginLeft: 12, flex: 1, fontWeight: '600' },
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#282828' },

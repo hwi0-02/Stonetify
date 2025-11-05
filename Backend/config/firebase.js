@@ -112,6 +112,9 @@ class RealtimeDBHelpers {
     if (!snapshot.exists()) return [];
     
     const data = snapshot.val();
+    if (!data || typeof data !== 'object') {
+      return [];
+    }
     const documents = [];
     
     for (const [id, document] of Object.entries(data)) {
@@ -125,10 +128,17 @@ class RealtimeDBHelpers {
 
   // 조건으로 문서 조회
   static async queryDocuments(collection, field, value) {
+    if (value === undefined) {
+      console.warn(`[Firebase] queryDocuments called with undefined value for ${collection}.${field}`);
+      return [];
+    }
     const snapshot = await db.ref(collection).orderByChild(field).equalTo(value).once('value');
     if (!snapshot.exists()) return [];
     
     const data = snapshot.val();
+    if (!data || typeof data !== 'object') {
+      return [];
+    }
     const documents = [];
     
     for (const [id, document] of Object.entries(data)) {
@@ -152,6 +162,9 @@ class RealtimeDBHelpers {
     if (!snapshot.exists()) return [];
     
     const data = snapshot.val();
+    if (!data || typeof data !== 'object') {
+      return [];
+    }
     let results = Object.values(data).filter(item => item !== null);
     
     if (order === 'desc') {

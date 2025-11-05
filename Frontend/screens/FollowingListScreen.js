@@ -38,7 +38,7 @@ const FollowingUserItem = ({ user, onUnfollow, onProfilePress }) => {
         {isUnfollowing ? (
           <ActivityIndicator size="small" color="#ffffff" />
         ) : (
-          <Text style={styles.unfollowButtonText}>Folloing</Text>
+          <Text style={styles.unfollowButtonText}>팔로잉</Text>
         )}
       </TouchableOpacity>
     </TouchableOpacity>

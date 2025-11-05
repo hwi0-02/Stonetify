@@ -596,7 +596,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
           )}
 
           <TouchableOpacity style={styles.iconButton} onPress={handleToggleLike}>
-            <Ionicons name={isLiked ? "heart" : "heart-outline"} size={28} color={isLiked ? "#1DB954" : "white"} />
+            <Ionicons name={isLiked ? "heart" : "heart-outline"} size={28} color={isLiked ? "#b04ad8ff" : "white"} />
           </TouchableOpacity>
 
           {isOwner && (

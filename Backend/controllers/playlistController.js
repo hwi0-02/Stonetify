@@ -225,6 +225,12 @@ const addSongToPlaylist = asyncHandler(async (req, res) => {
     const { song } = req.body;
     const { id: userId } = req.user;
 
+    // song 객체 유효성 검증
+    if (!song || typeof song !== 'object') {
+        res.status(400);
+        throw new Error('유효한 곡 정보가 필요합니다.');
+    }
+
     const playlist = await Playlist.findById(playlistId);
     if (!playlist) {
         res.status(404);

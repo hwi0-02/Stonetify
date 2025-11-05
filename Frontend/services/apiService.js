@@ -419,15 +419,61 @@ export const deletePlaylist = async (playlistId) => {
 // Playlist Song Management APIs
 export const addSongToPlaylist = (playlistId, songData) => {
   // Normalize incoming song object (from Spotify search or internal)
+  if (!songData || typeof songData !== 'object') {
+    throw new Error('곡 데이터가 유효하지 않습니다.');
+  }
+
+  const normalizeArtist = () => {
+    if (typeof songData.artist === 'string' && songData.artist.trim()) {
+      return songData.artist;
+    }
+    if (Array.isArray(songData.artists)) {
+      return songData.artists
+        .map((artist) => (typeof artist === 'string' ? artist : artist?.name))
+        .filter(Boolean)
+        .join(', ');
+    }
+    if (typeof songData.artists === 'string') {
+      return songData.artists;
+    }
+    return '';
+  };
+
+  const normalizeAlbum = () => {
+    if (typeof songData.album === 'string') {
+      return songData.album;
+    }
+    if (songData.album?.name) {
+      return songData.album.name;
+    }
+    return '';
+  };
+
+  const normalizeAlbumCover = () => {
+    if (songData.album_cover_url) return songData.album_cover_url;
+    if (songData.albumCoverUrl) return songData.albumCoverUrl;
+    if (Array.isArray(songData.album?.images) && songData.album.images.length) {
+      return songData.album.images[0]?.url || null;
+    }
+    return null;
+  };
+
+  const normalizeExternalUrl = () => {
+    if (typeof songData.external_urls === 'string') return songData.external_urls;
+    if (songData.external_urls?.spotify) return songData.external_urls.spotify;
+    if (typeof songData.external_url === 'string') return songData.external_url;
+    return null;
+  };
+
   const normalized = {
     spotify_id: songData.spotify_id || songData.id || null,
     title: songData.title || songData.name || '',
-    artist: songData.artist || songData.artists || '',
-    album: songData.album || '',
-    album_cover_url: songData.album_cover_url || songData.albumCoverUrl || null,
+    artist: normalizeArtist(),
+    album: normalizeAlbum(),
+    album_cover_url: normalizeAlbumCover(),
     preview_url: songData.preview_url || null,
     duration_ms: songData.duration_ms || null,
-    external_urls: songData.external_urls || songData.external_url || null,
+    external_urls: normalizeExternalUrl(),
   };
   return api.post(`playlists/${playlistId}/songs`, { song: normalized }).then(res => res.data);
 };
