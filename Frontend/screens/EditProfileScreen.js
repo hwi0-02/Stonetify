@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
-  SafeAreaView,
   View,
   Text,
   StyleSheet,
@@ -13,9 +12,10 @@ import {
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import * as ImagePicker from 'expo-image-picker';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { updateUserProfile, getMe, deleteAccount } from '../store/slices/authSlice';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { showToast } from '../utils/toast';
 
 const placeholderProfile = require('../assets/images/placeholder_album.png');
@@ -80,24 +80,17 @@ const EditProfileScreen = ({ navigation }) => {
       displayName: newDisplayName.trim(),
     };
 
+    // authSlice expects imageUri and mimeType, not base64Image
     if (newImageUri) {
-      try {
-        const base64 = await FileSystem.readAsStringAsync(newImageUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        profileData.base64Image = `data:${newImageMimeType};base64,${base64}`;
-      } catch (e) {
-        console.error("Image to base64 conversion failed", e);
-        Alert.alert('오류', '이미지를 처리하는 중 오류가 발생했습니다.');
-        return;
-      }
+      profileData.imageUri = newImageUri;
+      profileData.mimeType = newImageMimeType;
     }
 
     dispatch(updateUserProfile(profileData))
       .unwrap()
       .then(async (updatedUser) => {
         showToast('프로필이 성공적으로 저장되었습니다.');
-        await dispatch(getMe()); 
+        await dispatch(getMe());
         navigation.goBack();
       })
       .catch((error) => {

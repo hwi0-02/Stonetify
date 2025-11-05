@@ -42,6 +42,7 @@ const FeedScreen = ({ navigation }) => {
 
   const [tab, setTab] = useState('latest');
   const [refreshing, setRefreshing] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
 
   // 초기 로드 시에만 데이터를 가져옴
   useEffect(() => {
@@ -141,8 +142,8 @@ const FeedScreen = ({ navigation }) => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>피드</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => navigation.navigate('Saved')} style={styles.iconButton}>
-            <Ionicons name="bookmark-outline" size={22} color="#ffffff" />
+          <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.iconButton}>
+            <Ionicons name="ellipsis-horizontal" size={22} color="#ffffff" />
           </TouchableOpacity>
         </View>
       </View>

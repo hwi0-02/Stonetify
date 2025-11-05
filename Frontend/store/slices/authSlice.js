@@ -134,8 +134,7 @@ export const updateUserProfile = createAsyncThunk(
 
         // 2️⃣ Base64 읽기 (이제 안전함)
         const base64Data = await FileSystem.readAsStringAsync(localUri, {
-          // 일부 환경(웹/구버전)에서 FileSystem.EncodingType가 없을 수 있어 문자열 사용
-          encoding: 'base64',
+          encoding: FileSystem.EncodingType.Base64,
         });
 
         payload.profile_image_base64 = base64Data;
