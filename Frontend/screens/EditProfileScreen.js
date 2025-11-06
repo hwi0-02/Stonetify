@@ -82,10 +82,17 @@ const EditProfileScreen = ({ navigation }) => {
 
     if (newImageUri) {
       try {
+        const base64Encoding =
+          FileSystem.EncodingType && FileSystem.EncodingType.Base64
+            ? FileSystem.EncodingType.Base64
+            : 'base64';
+
         const base64 = await FileSystem.readAsStringAsync(newImageUri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: base64Encoding,
         });
-        profileData.base64Image = `data:${newImageMimeType};base64,${base64}`;
+
+        profileData.base64Image = base64;
+        profileData.mimeType = newImageMimeType;
       } catch (e) {
         console.error("Image to base64 conversion failed", e);
         Alert.alert('오류', '이미지를 처리하는 중 오류가 발생했습니다.');

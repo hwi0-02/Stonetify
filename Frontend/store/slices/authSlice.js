@@ -104,7 +104,7 @@ export const deleteAccount = createAsyncThunk(
 
 export const updateUserProfile = createAsyncThunk(
   'auth/updateUserProfile',
-  async ({ displayName, imageUri, mimeType }, { rejectWithValue, getState }) => {
+  async ({ displayName, imageUri, mimeType, base64Image }, { rejectWithValue, getState }) => {
     try {
       const { user } = getState().auth;
 
@@ -120,11 +120,44 @@ export const updateUserProfile = createAsyncThunk(
         display_name: displayName.trim(),
       };
 
-      // ✅ 이미지가 선택된 경우만 처리
-      if (imageUri) {
+      const appendImageFromBase64 = (rawBase64, fallbackMimeType) => {
+        if (typeof rawBase64 !== 'string') {
+          return;
+        }
+
+        const trimmed = rawBase64.trim();
+        if (!trimmed) {
+          return;
+        }
+
+        let detectedMime = fallbackMimeType;
+        let base64Payload = trimmed;
+        const dataUrlMatch = trimmed.match(/^data:([^;]+);base64,(.*)$/);
+
+        if (dataUrlMatch) {
+          if (!detectedMime || !detectedMime.startsWith('image/')) {
+            detectedMime = dataUrlMatch[1];
+          }
+          base64Payload = dataUrlMatch[2];
+        }
+
+        const sanitizedBase64 = base64Payload.replace(/\s+/g, '');
+        const resolvedMimeType =
+          detectedMime && detectedMime.startsWith('image/')
+            ? detectedMime
+            : 'image/jpeg';
+
+        payload.profile_image_base64 = sanitizedBase64;
+        payload.profile_image_mime_type = resolvedMimeType;
+      };
+
+      // ✅ base64 문자열이 직접 전달된 경우
+      if (typeof base64Image === 'string' && base64Image.trim().length > 0) {
+        appendImageFromBase64(base64Image, mimeType);
+      // ✅ 이미지 URI가 전달된 경우 (기존 경로 유지)
+      } else if (imageUri) {
         let localUri = imageUri;
 
-        // 1️⃣ content:// 형태면 앱 디렉토리로 복사
         if (imageUri.startsWith('content://')) {
           const fileName = `profile_${Date.now()}.jpg`;
           const dest = `${FileSystem.cacheDirectory}${fileName}`;
@@ -132,14 +165,18 @@ export const updateUserProfile = createAsyncThunk(
           localUri = dest;
         }
 
-        // 2️⃣ Base64 읽기 (이제 안전함)
+        const base64Encoding =
+          FileSystem.EncodingType && FileSystem.EncodingType.Base64
+            ? FileSystem.EncodingType.Base64
+            : 'base64';
+
         const base64Data = await FileSystem.readAsStringAsync(localUri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: base64Encoding,
         });
 
-        payload.profile_image_base64 = base64Data;
-        payload.profile_image_mime_type =
-          mimeType && mimeType.startsWith('image/') ? mimeType : 'image/jpeg';
+        appendImageFromBase64(base64Data, mimeType);
+      } else if (base64Image === null || imageUri === null) {
+        payload.profile_image_base64 = null;
       }
 
       const updatedProfile = await apiService.updateProfile(payload);

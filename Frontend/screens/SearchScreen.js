@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TextInput, FlatList, SectionList, TouchableOpacity, Modal, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TextInput, FlatList, SectionList, TouchableOpacity, Modal, Alert, ActivityIndicator,ImageBackground,
+  SafeAreaView, } from 'react-native';
 import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
@@ -12,7 +13,7 @@ import { playTrack, loadQueue } from '../store/slices/playerSlice';
 import { fetchMyPlaylists, createPlaylist } from '../store/slices/playlistSlice';
 import { loadSearchHistory, addRecentSearch, removeRecentSearch, clearSearchHistory } from '../store/slices/searchSlice';
 
-const placeholderAlbum = require('../assets/images/placeholder_album.png');
+const placeholderImage = require('../assets/images/placeholder_album.png');
 
 const PlaylistListItem = ({ item, onPress }) => (
   <TouchableOpacity style={styles.playlistItemContainer} onPress={() => onPress(item)}>
@@ -49,6 +50,8 @@ const SearchScreen = () => {
   const [selectedSong, setSelectedSong] = useState(null);
   const [newlyCreatedPlaylistId, setNewlyCreatedPlaylistId] = useState(null); // ❗ 새로 추가
   const [likeInflight, setLikeInflight] = useState({});
+
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
 
   const canPlayFullTracks = useMemo(() => {
     const hasToken = !!spotifyState?.accessToken;
@@ -124,16 +127,32 @@ const SearchScreen = () => {
   };
 
   const openPlaylistModal = async (song) => {
-    if (!song || typeof song !== 'object') {
-      Alert.alert('오류', '유효한 곡 정보가 없습니다.');
-      return;
-    }
     setSelectedSong(song);
     setModalVisible(true);
+    setSelectedPlaylistId(null); // <-- 선택 초기화
   };
 
   const toggleShowLiked = () => {
     setShowLiked((v) => !v);
+  };
+
+  const handleSelectPlaylist = (playlistId) => {
+    setSelectedPlaylistId(playlistId);
+  };
+
+  const handleConfirmAddSong = () => {
+    // '새 플레이리스트'가 선택된 경우 (ID가 null)
+    if (selectedPlaylistId === null && isCreatingPlaylist) {
+      handleAddSongToPlaylist(null);
+    }
+    // 기존 플레이리스트가 선택된 경우
+    else if (selectedPlaylistId) {
+      handleAddSongToPlaylist(selectedPlaylistId);
+    }
+    // 아무것도 선택되지 않은 경우
+    else {
+      Alert.alert('알림', '추가할 플레이리스트를 선택해주세요.');
+    }
   };
 
   const handleAddSongToPlaylist = async (playlistId) => {
@@ -238,42 +257,6 @@ const SearchScreen = () => {
     }
   };
 
-  //  모달에 표시될 플레이리스트 항목을 렌더링하는 함수 (PostCard 스타일)
-  const renderPlaylistItem = ({ item }) => {
-    const coverImageSource = item.cover_image_url
-      ? { uri: item.cover_image_url }
-      : placeholderAlbum;
-
-    const playlistSongCount =
-      item.songCount ?? item.song_count ?? item.songs?.length;
-
-    return (
-      <TouchableOpacity
-        style={styles.playlistContainer}
-        onPress={() => handleAddSongToPlaylist(item.id)}
-      >
-        <Image
-          source={coverImageSource}
-          style={styles.coverImage}
-          cachePolicy="memory-disk"
-          contentFit="cover"
-        />
-        <View style={styles.playlistInfo}>
-          <Text style={styles.playlistCardTitle} numberOfLines={1}>
-            {item.title || '플레이리스트'}
-          </Text>
-          <View style={styles.playlistMetaRow}>
-            <Text style={styles.playlistDescription} numberOfLines={1}>
-              {item.description ? `${item.description}` : ''}
-            </Text>
-            <Text style={styles.playlistDescription} numberOfLines={1}>
-              {playlistSongCount ? `${playlistSongCount}곡` : ''}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
 
   const renderRecentSearchItem = ({ item }) => (
     <TouchableOpacity style={styles.recentItem} onPress={() => handleRecentItemPress(item)}>
@@ -495,84 +478,112 @@ const SearchScreen = () => {
 
       <Modal
         animationType="slide"
-        transparent={false}
+        transparent={true}
         visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => {
+          setModalVisible(false);
+          setSelectedPlaylistId(null);
+        }}
       >
-        <View style={styles.fullModalContainer}>
-          {/* 헤더 */}
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalHeaderTitle}>플레이리스트에 추가</Text>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Ionicons name="close" size={28} color="#ffffff" />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>플레이리스트에 추가</Text>
 
-          {/* 선택된 곡 정보 */}
-          {selectedSong && (
-            <View style={styles.selectedSongContainer}>
-              <Image
-                source={{ uri: selectedSong.album_cover_url || selectedSong.album?.images?.[0]?.url }}
-                style={styles.selectedSongImage}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
-              <View style={styles.selectedSongInfo}>
-                <Text style={styles.selectedSongTitle} numberOfLines={1}>
-                  {selectedSong.name || selectedSong.title}
-                </Text>
-                <Text style={styles.selectedSongArtist} numberOfLines={1}>
-                  {Array.isArray(selectedSong.artists)
-                    ? selectedSong.artists.map((a) => a.name).join(', ')
-                    : (selectedSong.artists || selectedSong.artist || 'Unknown Artist')}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* 플레이리스트 목록 */}
-          {playlistStatus === 'loading' ? (
-            <ActivityIndicator
-              style={{ marginTop: 20 }}
-              size="large"
-              color="#b04ad8ff"
-            />
-          ) : (
-            <FlatList
-              data={userPlaylists}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={renderPlaylistItem}
-              contentContainerStyle={styles.listContainer}
-              ListHeaderComponent={
-                isCreatingPlaylist ? (
-                  <TouchableOpacity
-                    style={styles.playlistContainer}
-                    onPress={() => handleAddSongToPlaylist(null)}
-                  >
-                    <Image
-                      source={placeholderAlbum}
-                      style={styles.coverImage}
-                    />
-                    <View style={styles.playlistInfo}>
-                      <Text style={styles.playlistCardTitle}>
-                        새 플레이리스트 생성
-                      </Text>
-                      <Text style={styles.playlistDescription} numberOfLines={1}>
-                        '{playlistTitle}'에 추가
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ) : null
-              }
-              ListEmptyComponent={() => (
-                <View style={styles.emptyListContainer}>
-                  <Text style={styles.emptyText}>
-                    생성된 플레이리스트가 없습니다.
+            {isCreatingPlaylist && (
+              <TouchableOpacity
+                style={[
+                  styles.playlistItem,
+                  selectedPlaylistId === null && styles.playlistItemSelected
+                ]}
+                onPress={() => handleSelectPlaylist(null)}
+              >
+                <View style={[styles.playlistItemImage, styles.newPlaylistIconContainer]}>
+                  <Ionicons name="add" size={24} color="#fff" />
+                </View>
+                <View style={styles.playlistItemTextContainer}>
+                  <Text style={styles.playlistTitle} numberOfLines={1}>
+                    새 플레이리스트 '{playlistTitle}'에 추가
                   </Text>
                 </View>
-              )}
-            />
-          )}
+              </TouchableOpacity>
+            )}
+
+            {playlistStatus === 'loading' ? (
+              <ActivityIndicator size="large" color="#fff" />
+            ) : (
+              <FlatList
+                data={userPlaylists}
+                keyExtractor={(item) => item.id.toString()}
+
+                renderItem={({ item }) => {
+                  const isSelected = selectedPlaylistId === item.id;
+
+                  const coverImageSource = item.cover_images?.[0]
+                    ? { uri: item.cover_images[0] }
+                    : placeholderImage;
+
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.playlistItem,
+                        isSelected && styles.playlistItemSelected
+                      ]}
+                      onPress={() => handleSelectPlaylist(item.id)}
+                    >
+                      <Image
+                        source={coverImageSource}
+                        style={styles.playlistItemImage}
+                        contentFit="cover"
+                        transition={300}
+                      />
+
+                      <View style={styles.playlistItemTextContainer}>
+                        <Text style={styles.playlistModalTitle} numberOfLines={1}>{item.title}</Text>
+                      </View>
+
+                     {isSelected && (
+                        <Ionicons
+                          name="checkmark-circle-outline"
+                          size={24}
+                          color="#b04ad8ff"
+                          style={styles.checkmarkIcon}
+                        />
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+                ListEmptyComponent={() => (
+                  !isCreatingPlaylist && <Text style={styles.emptyText}>생성된 플레이리스트가 없습니다.</Text>
+                )}
+              />
+            )}
+
+            <View style={styles.modalButtonRow}>
+            {/* "추가" 버튼 */}
+            <TouchableOpacity
+              style={[
+                styles.modalAddButton,
+                (selectedPlaylistId === null && !isCreatingPlaylist) && styles.modalButtonDisabled
+              ]}
+              onPress={handleConfirmAddSong}
+              disabled={(selectedPlaylistId === null && !isCreatingPlaylist)}
+            >
+
+              <Text style={styles.modalButtonText}>추가</Text>
+            </TouchableOpacity>
+
+            {/* "취소" 버튼 */}
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => {
+                setModalVisible(false);
+                setSelectedPlaylistId(null);
+              }}
+            >
+              <Text style={styles.cancelButtonText}>취소</Text>
+            </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
     </View>
@@ -799,101 +810,112 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  fullModalContainer: {
+  // Modal Styles
+  modalContainer: {
     flex: 1,
-    backgroundColor: '#121212',
-    paddingTop: 50, // 상단 상태바 영역
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.8)'
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#282828',
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '70%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 12,
   },
-  modalHeaderTitle: {
+  modalTitle: {
     color: '#ffffff',
     fontSize: 22,
     fontWeight: '700',
+    marginBottom: 24,
+    textAlign: 'center',
+    letterSpacing: -0.5,
   },
-  listContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
-  },
-  emptyListContainer: {
-    alignItems: 'center',
-    marginTop: 40,
-  },
-
-  // --- 선택된 곡 정보 (UX 향상) ---
-  selectedSongContainer: {
+  playlistItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1E1E1E',
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  selectedSongImage: {
+  playlistItemSelected: {
+    backgroundColor: '#2a2a2a',
+    borderColor: '#b04ad8ff',
+  },
+  playlistItemImage: {
     width: 50,
     height: 50,
-    borderRadius: 4,
-    marginRight: 12,
+    borderRadius: 6,
     backgroundColor: '#333',
   },
-  selectedSongInfo: {
-    flex: 1,
+  newPlaylistIconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#333',
   },
-  selectedSongTitle: {
-    color: '#fff',
+  playlistItemTextContainer: {
+    flex: 1,
+    marginLeft: 14,
+    justifyContent: 'center',
+  },
+  playlistModalTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  checkmarkIcon: {
+    marginLeft: 10,
+    marginRight: 5,
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    justifyContent: 'space-between',
+  },
+  modalAddButton: {
+    flex: 1,
+    backgroundColor: '#b04ad8ff',
+    paddingVertical: 14,
+    borderRadius: 28,
+    alignItems: 'center',
+    marginRight: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  modalButtonDisabled: {
+    backgroundColor: '#404040',
+  },
+  modalButtonText: {
+    color: '#ffffff',
+    textAlign: 'center',
     fontSize: 16,
     fontWeight: '600',
   },
-  selectedSongArtist: {
-    color: '#b3b3b3',
-    fontSize: 14,
-    marginTop: 4,
+  cancelButton: {
+   flex: 1,
+    marginTop: 0,
+    paddingVertical: 14,
+    borderRadius: 28,
+    backgroundColor: '#404040',
+    marginLeft: 5,
   },
-
-  // --- PostCard-like Item Styles ---
-  playlistContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#282828',
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 12, // 리스트 항목 간 여백
-  },
-  coverImage: {
-    width: 80,
-    height: 80,
-    backgroundColor: '#333',
-  },
-  playlistInfo: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    justifyContent: 'center',
-  },
-  // [변경] 스타일 이름 변경 (기존 playlistTitle과 충돌 방지)
-  playlistCardTitle: {
+  cancelButtonText: {
     color: '#ffffff',
+    textAlign: 'center',
     fontSize: 16,
-    fontWeight: '700',
-  },
-  playlistDescription: {
-    color: '#b3b3b3',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  playlistMetaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
+    fontWeight: '600',
   },
 });
 

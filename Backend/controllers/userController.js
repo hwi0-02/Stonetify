@@ -236,7 +236,15 @@ const updateProfile = asyncHandler(async (req, res) => {
     }
 
     if (typeof profile_image_base64 === 'string' && profile_image_base64.length > 0) {
-        const sanitizedBase64 = profile_image_base64.replace(/^data:[^;]+;base64,/, '');
+        const dataUrlMatch = profile_image_base64.match(/^data:([^;]+);base64,/);
+        let sanitizedBase64 = profile_image_base64.replace(/^data:[^;]+;base64,/, '');
+        sanitizedBase64 = sanitizedBase64.replace(/\s+/g, '');
+
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(sanitizedBase64)) {
+            res.status(400);
+            throw new Error('유효한 이미지 데이터 형식이 아닙니다.');
+        }
+
         const estimatedBytes = Math.ceil((sanitizedBase64.length * 3) / 4);
         const maxBytes = 5 * 1024 * 1024; // 5MB 제한
 
@@ -247,6 +255,8 @@ const updateProfile = asyncHandler(async (req, res) => {
 
         const mimeType = (typeof profile_image_mime_type === 'string' && profile_image_mime_type.startsWith('image/'))
             ? profile_image_mime_type
+            : (dataUrlMatch && dataUrlMatch[1] && dataUrlMatch[1].startsWith('image/'))
+                ? dataUrlMatch[1]
             : 'image/jpeg';
 
         updates.profile_image_url = `data:${mimeType};base64,${sanitizedBase64}`;
