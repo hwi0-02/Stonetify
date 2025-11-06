@@ -4,7 +4,7 @@ import { showToast } from '../../utils/toast';
 import { track as analyticsTrack } from '../../utils/analytics';
 import { startPlaybackHistory, completePlaybackHistory, getRemoteDevices, transferRemotePlayback } from '../../services/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearSpotifySession } from './spotifySlice';
+import { clearSpotifySession, refreshSpotifyToken } from './spotifySlice';
 
 let lastStatusUpdate = 0;
 
@@ -160,11 +160,34 @@ export const playTrack = createAsyncThunk(
   async (track, { dispatch, rejectWithValue, getState }) => {
     try {
       if (!track) return rejectWithValue('트랙 정보가 없습니다.');
+
+      const reduxState = getState();
+
+      // Check if Spotify token is expired and refresh if needed
+      const spotifyState = reduxState.spotify;
+      const tokenExpiry = spotifyState?.tokenExpiry;
+      const hasRefreshToken = spotifyState?.refreshTokenEnc;
+
+      if (hasRefreshToken && tokenExpiry && Date.now() >= tokenExpiry) {
+        console.log('🔄 [playTrack] Token expired, refreshing...');
+        try {
+          await dispatch(refreshSpotifyToken()).unwrap();
+        } catch (refreshError) {
+          console.error('🔴 [playTrack] Token refresh failed:', refreshError);
+          if (refreshError?.error === 'TOKEN_REVOKED' || refreshError?.requiresReauth) {
+            return rejectWithValue({
+              message: refreshError?.message || 'Spotify 연결이 만료되었습니다.\n프로필에서 Spotify를 다시 연결해주세요.',
+              code: 'TOKEN_REVOKED',
+              requiresReauth: true
+            });
+          }
+        }
+      }
+
       // Ensure Spotify adapter is ready
       await dispatch(ensurePlaybackAdapter({ track }));
       const adapterType = getAdapterType();
       const adapter = getAdapter();
-      const reduxState = getState();
       const preferredDeviceId = reduxState?.player?.playbackDeviceId || null;
       
       if (!adapter) {

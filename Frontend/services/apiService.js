@@ -565,8 +565,8 @@ export const searchPlaylists = (query) => api.get(`playlists/search?q=${encodeUR
 // Spotify Auth (PKCE) - Phase B
 export const exchangeSpotifyCode = ({ code, code_verifier, redirect_uri, userId, client_id }) =>
   api.post('spotify/auth/token', { code, code_verifier, redirect_uri, userId, client_id }).then(r => r.data);
-export const refreshSpotifyToken = ({ refreshTokenEnc, userId, client_id }) =>
-  api.post('spotify/auth/refresh', { refreshTokenEnc, userId, client_id }).then(r => r.data);
+export const refreshSpotifyToken = ({ userId, client_id }) =>
+  api.post('spotify/auth/refresh', { userId, client_id }).then(r => r.data);
 export const getSpotifyPremiumStatus = (userId) => api.get('spotify/auth/premium-status', { headers: { 'x-user-id': userId }}).then(r => r.data);
 export const getSpotifyProfile = (userId) => api.get('spotify/me', { headers: { 'x-user-id': userId }}).then(r => r.data);
 export const revokeSpotifySession = (userId) => api.post('spotify/auth/revoke', { userId }).then(r => r.data);

@@ -53,14 +53,29 @@ export const refreshSpotifyToken = createAsyncThunk(
     const state = thunkAPI.getState().spotify;
     if (!state.refreshTokenEnc) return thunkAPI.rejectWithValue('리프레시 토큰 없음');
     try {
+      const userId = thunkAPI.getState().auth.user?.id || thunkAPI.getState().auth.user?.userId;
+      if (!userId) return thunkAPI.rejectWithValue('사용자 ID가 없습니다');
+
       const clientId = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
         || process.env.SPOTIFY_CLIENT_ID
         || Constants.expoConfig?.extra?.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
         || Constants.expoConfig?.extra?.spotifyClientId;
-      const data = await apiService.refreshSpotifyToken({ refreshTokenEnc: state.refreshTokenEnc, userId: thunkAPI.getState().auth.user?.id || 'anon', client_id: clientId });
+
+      const data = await apiService.refreshSpotifyToken({ userId, client_id: clientId });
       return data;
     } catch (e) {
-      return thunkAPI.rejectWithValue('Spotify 토큰 갱신 실패');
+      const errorMessage = e?.response?.data?.message || e?.message || 'Spotify 토큰 갱신 실패';
+
+      // Handle TOKEN_REVOKED error
+      if (e?.response?.data?.error === 'TOKEN_REVOKED' || e?.response?.data?.requiresReauth) {
+        return thunkAPI.rejectWithValue({
+          message: errorMessage,
+          error: 'TOKEN_REVOKED',
+          requiresReauth: true
+        });
+      }
+
+      return thunkAPI.rejectWithValue(errorMessage);
     }
   }
 );
@@ -164,6 +179,19 @@ const spotifySlice = createSlice({
         state.refreshTokenEnc = action.payload.refreshTokenEnc;
         state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000;
         state.requiresReauth = false;
+        state.authError = null;
+      })
+      .addCase(refreshSpotifyToken.rejected, (state, action) => {
+        // Handle TOKEN_REVOKED error
+        if (action.payload?.error === 'TOKEN_REVOKED' || action.payload?.requiresReauth) {
+          state.accessToken = null;
+          state.refreshTokenEnc = null;
+          state.tokenExpiry = null;
+          state.requiresReauth = true;
+          state.authError = action.payload?.message || 'Spotify 연결이 만료되었습니다.';
+        } else {
+          state.authError = action.payload?.message || action.payload || 'Spotify 토큰 갱신 실패';
+        }
       })
       .addCase(getPremiumStatus.fulfilled, (state, action) => {
         state.isPremium = action.payload.isPremium;

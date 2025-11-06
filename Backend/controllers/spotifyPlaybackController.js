@@ -66,18 +66,25 @@ function handlePlaybackError(e, res, operation) {
 async function getAccessTokenForUser(userId){
   const cached = accessCache.get(userId);
   if(cached && cached.expiresAt > Date.now() + 5000){
+    console.log('[getAccessTokenForUser] Using cached token for user:', userId);
     return cached.accessToken;
   }
+
+  console.log('[getAccessTokenForUser] Token expired or not cached, refreshing for user:', userId);
   const rec = await SpotifyTokenModel.getByUser(userId);
   if(!rec || rec.revoked) {
-    const error = new Error('No stored refresh token for user');
+    console.error('[getAccessTokenForUser] No token record or revoked for user:', userId);
+    const error = new Error('Spotify 연결이 필요합니다. 프로필에서 Spotify를 연결해주세요.');
     error.code = 'TOKEN_REVOKED';
+    error.requiresReauth = true;
     throw error;
   }
   const refreshToken = SpotifyTokenModel.decryptRefresh(rec);
   if(!refreshToken) {
-    const error = new Error('Refresh token null (revoked?)');
+    console.error('[getAccessTokenForUser] Refresh token decryption failed for user:', userId);
+    const error = new Error('Spotify 인증 정보가 손상되었습니다. 다시 연결해주세요.');
     error.code = 'TOKEN_REVOKED';
+    error.requiresReauth = true;
     throw error;
   }
 
@@ -87,12 +94,20 @@ async function getAccessTokenForUser(userId){
   const { headers } = prepareTokenRequest(params, rec.client_id);
 
   try {
+    console.log('[getAccessTokenForUser] Requesting new access token from Spotify...');
     const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
     const { access_token, expires_in, refresh_token: newRefresh, scope } = tokenResp.data || {};
+
+    if (!access_token) {
+      throw new Error('Spotify did not return an access token');
+    }
+
+    console.log('[getAccessTokenForUser] Successfully obtained new access token');
 
     if (newRefresh) {
       try {
         await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || rec.scope, { historyLimit: 5, maxPerHour: 12, clientId: rec.client_id || process.env.SPOTIFY_CLIENT_ID || null });
+        console.log('[getAccessTokenForUser] Refresh token rotated successfully');
       } catch (e) {
         console.warn('[Playback:getAccessTokenForUser] Failed to persist rotated refresh token:', e.message);
       }
@@ -104,12 +119,13 @@ async function getAccessTokenForUser(userId){
       console.error('[getAccessTokenForUser] Refresh token revoked by Spotify:', userId);
       await SpotifyTokenModel.markRevoked(userId);
       accessCache.delete(userId);
-      
-      const revokedError = new Error('Refresh token has been revoked by Spotify. Please reconnect your account.');
+
+      const revokedError = new Error('Spotify 연결이 만료되었습니다. 프로필에서 Spotify를 다시 연결해주세요.');
       revokedError.code = 'TOKEN_REVOKED';
       revokedError.requiresReauth = true;
       throw revokedError;
     }
+    console.error('[getAccessTokenForUser] Token refresh failed:', error.message);
     throw error;
   }
 }

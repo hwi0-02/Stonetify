@@ -1,6 +1,8 @@
 // Adapter registry / manager
 // Lightweight REST-based remote adapter using backend proxy endpoints
 import apiService from '../../Frontend/services/apiService';
+import store from '../../Frontend/store/store';
+import { refreshSpotifyToken } from '../../Frontend/store/slices/spotifySlice';
 
 class RestRemoteAdapter {
   constructor(userId) {
@@ -9,9 +11,39 @@ class RestRemoteAdapter {
     this.pollInterval = null;
     this.currentTrack = null;
     this._suspended = false;
+    this.retryCount = 0;
+    this.maxRetries = 1; // Only retry once for token refresh
   }
   async connect() {
     // no-op: backend handles token refresh
+  }
+  async _refreshTokenAndRetry(retryFn) {
+    if (this.retryCount >= this.maxRetries) {
+      console.error('🔴 [RestRemoteAdapter] Max retry attempts reached');
+      throw new Error('토큰 갱신 재시도 횟수를 초과했습니다.');
+    }
+
+    console.log('🔄 [RestRemoteAdapter] Attempting to refresh token...');
+    this.retryCount++;
+
+    try {
+      await store.dispatch(refreshSpotifyToken()).unwrap();
+      console.log('✅ [RestRemoteAdapter] Token refreshed successfully, retrying original request');
+      this.retryCount = 0; // Reset on success
+      return await retryFn();
+    } catch (refreshError) {
+      console.error('🔴 [RestRemoteAdapter] Token refresh failed:', refreshError);
+      this.retryCount = 0; // Reset for next attempt
+
+      // Re-throw with proper error code
+      const error = new Error(
+        refreshError?.message ||
+        'Spotify 연결이 만료되었습니다.\n프로필에서 Spotify를 다시 연결해주세요.'
+      );
+      error.code = 'TOKEN_REVOKED';
+      error.requiresReauth = true;
+      throw error;
+    }
   }
   async load(track, autoPlay = true, options = {}) {
     this.currentTrack = track;
@@ -31,40 +63,145 @@ class RestRemoteAdapter {
       throw new Error(`Invalid track ID format detected: ${uris[0]}`);
     }
     
-    try {
+    const executeLoad = async () => {
       await apiService.playRemote({ userId: this.userId, uris, device_id: deviceId });
       if (!autoPlay) await apiService.pauseRemote(this.userId);
       this._startPolling();
+    };
+
+    try {
+      await executeLoad();
     } catch (error) {
-      // Handle TOKEN_REVOKED error
-      if (error.code === 'TOKEN_REVOKED' || error.response?.data?.error === 'TOKEN_REVOKED') {
-        console.error('🔴 [RestRemoteAdapter] Spotify token revoked');
-        const revokedError = new Error(
-          'Spotify 연결이 만료되었습니다.\n\n' +
-          '프로필 화면에서 Spotify를 다시 연결해주세요.'
-        );
-        revokedError.code = 'TOKEN_REVOKED';
-        revokedError.requiresReauth = true;
-        throw revokedError;
+      console.error('🔴 [RestRemoteAdapter] Playback error:', {
+        message: error.message,
+        code: error.code,
+        responseData: error.response?.data,
+        status: error.response?.status
+      });
+
+      // Handle TOKEN_REVOKED error - try to refresh and retry once
+      if ((error.response?.status === 401 || error.code === 'TOKEN_REVOKED' ||
+          error.response?.data?.error === 'TOKEN_REVOKED' ||
+          error.response?.data?.requiresReauth) && this.retryCount === 0) {
+        console.log('🔄 [RestRemoteAdapter] Token error detected, attempting refresh and retry...');
+        try {
+          return await this._refreshTokenAndRetry(executeLoad);
+        } catch (retryError) {
+          console.error('🔴 [RestRemoteAdapter] Refresh and retry failed');
+          throw retryError;
+        }
       }
-      
+
       // Handle NO_ACTIVE_DEVICE error specifically
       if (error.response?.data?.error === 'NO_ACTIVE_DEVICE') {
         const userFriendlyError = new Error(
-          'Spotify 재생 장치를 찾을 수 없습니다.\n\n' +
-          '휴대폰, 컴퓨터 또는 스피커에서 Spotify 앱을 먼저 열어주세요.'
+          error.response?.data?.message ||
+          'Spotify 재생 장치를 찾을 수 없습니다.\n휴대폰, 컴퓨터 또는 스피커에서 Spotify 앱을 먼저 열어주세요.'
         );
         userFriendlyError.code = 'NO_ACTIVE_DEVICE';
         throw userFriendlyError;
       }
-      throw error;
+
+      // Re-throw with user-friendly message
+      const friendlyError = new Error(error.response?.data?.message || error.message || '재생 중 오류가 발생했습니다.');
+      friendlyError.code = error.code || error.response?.data?.error;
+      throw friendlyError;
+    } finally {
+      this.retryCount = 0; // Always reset retry count after operation
     }
   }
-  async play() { await apiService.playRemote({ userId: this.userId }); this.resumePolling(); }
-  async pause() { await apiService.pauseRemote(this.userId); this.suspendPolling(); }
-  async stop() { await apiService.pauseRemote(this.userId); this._stopPolling(); }
-  async seek(ms) { await apiService.seekRemote({ userId: this.userId, position_ms: ms }); }
-  async setVolume(v) { await apiService.setRemoteVolume({ userId: this.userId, volume_percent: Math.round(v * 100) }); }
+  async play() {
+    const executePlay = async () => {
+      await apiService.playRemote({ userId: this.userId });
+      this.resumePolling();
+    };
+
+    try {
+      await executePlay();
+    } catch (error) {
+      if (this._shouldRetryForTokenError(error)) {
+        return await this._refreshTokenAndRetry(executePlay);
+      }
+      throw error;
+    } finally {
+      this.retryCount = 0;
+    }
+  }
+  async pause() {
+    const executePause = async () => {
+      await apiService.pauseRemote(this.userId);
+      this.suspendPolling();
+    };
+
+    try {
+      await executePause();
+    } catch (error) {
+      if (this._shouldRetryForTokenError(error)) {
+        return await this._refreshTokenAndRetry(executePause);
+      }
+      throw error;
+    } finally {
+      this.retryCount = 0;
+    }
+  }
+  async stop() {
+    const executeStop = async () => {
+      await apiService.pauseRemote(this.userId);
+      this._stopPolling();
+    };
+
+    try {
+      await executeStop();
+    } catch (error) {
+      if (this._shouldRetryForTokenError(error)) {
+        return await this._refreshTokenAndRetry(executeStop);
+      }
+      throw error;
+    } finally {
+      this.retryCount = 0;
+    }
+  }
+  async seek(ms) {
+    const executeSeek = async () => {
+      await apiService.seekRemote({ userId: this.userId, position_ms: ms });
+    };
+
+    try {
+      await executeSeek();
+    } catch (error) {
+      if (this._shouldRetryForTokenError(error)) {
+        return await this._refreshTokenAndRetry(executeSeek);
+      }
+      throw error;
+    } finally {
+      this.retryCount = 0;
+    }
+  }
+  async setVolume(v) {
+    const executeSetVolume = async () => {
+      await apiService.setRemoteVolume({ userId: this.userId, volume_percent: Math.round(v * 100) });
+    };
+
+    try {
+      await executeSetVolume();
+    } catch (error) {
+      if (this._shouldRetryForTokenError(error)) {
+        return await this._refreshTokenAndRetry(executeSetVolume);
+      }
+      throw error;
+    } finally {
+      this.retryCount = 0;
+    }
+  }
+  _shouldRetryForTokenError(error) {
+    return (
+      this.retryCount === 0 &&
+      (error.response?.status === 401 ||
+        error.code === 'TOKEN_REVOKED' ||
+        error.response?.data?.error === 'TOKEN_REVOKED' ||
+        error.response?.data?.requiresReauth)
+    );
+  }
   onStatus(cb) { this.statusCb = cb; }
   async dispose() { this._stopPolling(); }
   _startPolling() {
@@ -83,7 +220,14 @@ class RestRemoteAdapter {
           }
         }
       } catch (e) {
-        // silent; polling error not fatal
+        // Handle TOKEN_REVOKED in polling - stop polling silently
+        if (e.code === 'TOKEN_REVOKED' || e.response?.data?.error === 'TOKEN_REVOKED') {
+          console.warn('⚠️ [RestRemoteAdapter] Token revoked during polling, stopping...');
+          this._stopPolling();
+          return;
+        }
+        // silent; other polling errors not fatal
+        console.warn('⚠️ [RestRemoteAdapter] Polling error (non-fatal):', e.message);
       }
     }, 2500); // remote polling every 2.5s (lighter than preview 250ms push)
   }
