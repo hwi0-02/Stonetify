@@ -9,19 +9,21 @@ const { protect } = require('../middleware/authMiddleware');
 // OAuth state 생성 (인증 불필요 - 로그인 전에 사용)
 router.post('/state', authLimiter, socialStateController.createState);
 
-// 모든 소셜 로그인 라우트에 인증 미들웨어 적용
-router.use(protect);
+// ===== 인증 불필요 엔드포인트 (로그인/회원가입 용도) =====
+// 소셜 로그인 토큰 교환 - 이미 로그인된 사용자가 소셜 계정을 연결하는 용도
+// 주의: 이 엔드포인트는 Stonetify 계정에 소셜 계정을 "연결"하는 것이므로 인증 필요
+router.post('/kakao/token', authLimiter, protect, kakaoAuthController.exchangeCode);
+router.post('/naver/token', authLimiter, protect, naverAuthController.exchangeCode);
 
-// Kakao OAuth
-router.post('/kakao/token', authLimiter, kakaoAuthController.exchangeCode);
-router.post('/kakao/refresh', authLimiter, kakaoAuthController.refreshToken);
-router.post('/kakao/revoke', authLimiter, kakaoAuthController.revoke);
-router.get('/kakao/me', authLimiter, kakaoAuthController.getProfile);
+// ===== 인증 필요 엔드포인트 =====
+// Kakao OAuth - 연결된 계정 관리
+router.post('/kakao/refresh', authLimiter, protect, kakaoAuthController.refreshToken);
+router.post('/kakao/revoke', authLimiter, protect, kakaoAuthController.revoke);
+router.get('/kakao/me', authLimiter, protect, kakaoAuthController.getProfile);
 
-// Naver OAuth
-router.post('/naver/token', authLimiter, naverAuthController.exchangeCode);
-router.post('/naver/refresh', authLimiter, naverAuthController.refreshToken);
-router.post('/naver/revoke', authLimiter, naverAuthController.revoke);
-router.get('/naver/me', authLimiter, naverAuthController.getProfile);
+// Naver OAuth - 연결된 계정 관리
+router.post('/naver/refresh', authLimiter, protect, naverAuthController.refreshToken);
+router.post('/naver/revoke', authLimiter, protect, naverAuthController.revoke);
+router.get('/naver/me', authLimiter, protect, naverAuthController.getProfile);
 
 module.exports = router;

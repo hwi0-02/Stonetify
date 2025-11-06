@@ -90,14 +90,53 @@ export function useSpotifyAuth(userId) {
   const clientId = useMemo(resolveClientId, []);
   const redirectUri = useMemo(buildRedirectUri, []);
 
+  // Client ID 검증
+  useEffect(() => {
+    if (!clientId) {
+      console.error('╔══════════════════════════════════════════════════════════════╗');
+      console.error('║        ⚠️  Spotify Client ID가 설정되지 않았습니다 ⚠️        ║');
+      console.error('╚══════════════════════════════════════════════════════════════╝');
+      console.error('');
+      console.error('Spotify 인증이 작동하지 않습니다.');
+      console.error('');
+      console.error('해결 방법:');
+      console.error('  1. .env 파일에 다음 환경 변수를 추가하세요:');
+      console.error('     EXPO_PUBLIC_SPOTIFY_CLIENT_ID=your_spotify_client_id');
+      console.error('  2. Spotify Developer Dashboard에서 Client ID를 확인하세요:');
+      console.error('     https://developer.spotify.com/dashboard');
+      console.error('  3. 앱을 재시작하세요');
+      console.error('');
+      console.error('╚══════════════════════════════════════════════════════════════╝');
+    }
+  }, [clientId]);
+
+  // Redirect URI 검증 및 로깅
   useEffect(() => {
     if (__DEV__) {
-      console.log('[SpotifyAuth] Using redirect URI:', redirectUri);
+      console.log('[SpotifyAuth] Configuration:');
+      console.log('  Client ID:', clientId ? `${clientId.substring(0, 8)}...` : 'NOT SET');
+      console.log('  Redirect URI:', redirectUri);
+      console.log('  Is Expo Go:', isExpoGo());
+
       if (isExpoGo()) {
-        console.log('[SpotifyAuth] Expo proxy target:', getProjectNameForProxy());
+        console.log('  Expo proxy target:', getProjectNameForProxy());
       }
+
+      // Redirect URI 형식 검증
+      try {
+        new URL(redirectUri);
+        console.log('  ✅ Redirect URI 형식이 올바릅니다');
+      } catch (err) {
+        console.error('  ❌ Redirect URI 형식이 올바르지 않습니다:', redirectUri);
+        console.error('     올바른 형식: stonetify://redirect 또는 https://...');
+      }
+
+      // Spotify Dashboard 확인 메시지
+      console.warn('⚠️  Spotify Developer Dashboard에서 다음 Redirect URI를 등록했는지 확인하세요:');
+      console.warn(`     ${redirectUri}`);
+      console.warn('     URL: https://developer.spotify.com/dashboard');
     }
-  }, [redirectUri]);
+  }, [clientId, redirectUri]);
 
   const hasUser = !!userId;
   const responseHandledRef = useRef();

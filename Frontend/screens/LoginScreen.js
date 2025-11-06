@@ -231,13 +231,13 @@ const LoginScreen = ({ navigation }) => {
         <View style={styles.socialLoginContainer}>
           <TouchableOpacity
             style={[styles.socialButton, { backgroundColor: '#FEE500' }]}
-            onPress={() => handleSocialLogin('kakao')}
+            onPress={handleKakaoLogin}
           >
             <Image source={kakaoLogo} style={styles.socialLogo} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.socialButton, { backgroundColor: '#03C75A' }]}
-            onPress={() => handleSocialLogin('naver')}
+            onPress={handleNaverLogin}
           >
             <Image source={naverLogo} style={styles.socialLogo} />
           </TouchableOpacity>

@@ -39,27 +39,53 @@ function normalizeBaseApi(u) {
 }
 
 function getApiUrl() {
-  const base =
-    normalizeBaseApi(
-      readExtra('EXPO_PUBLIC_API_URL', null) ||
-      readExtra('EXPO_PUBLIC_TUNNEL_API_URL', null) ||
-      Constants.expoConfig?.extra?.apiUrl ||
-      'http://localhost:5000/api'
-    );
-  // 이후 경로 조립 시 /api를 다시 붙인다
+  const base = normalizeBaseApi(
+    readExtra('EXPO_PUBLIC_API_URL', null) ||
+    readExtra('EXPO_PUBLIC_TUNNEL_API_URL', null) ||
+    Constants.expoConfig?.extra?.apiUrl ||
+    null
+  );
+
+  if (!base) {
+    console.error('╔══════════════════════════════════════════════════════════════╗');
+    console.error('║           ⚠️  API URL이 설정되지 않았습니다 ⚠️               ║');
+    console.error('╚══════════════════════════════════════════════════════════════╝');
+    console.error('');
+    console.error('소셜 로그인이 작동하지 않을 수 있습니다.');
+    console.error('');
+    console.error('해결 방법:');
+    console.error('  1. .env 파일에 다음 환경 변수를 추가하세요:');
+    console.error('     EXPO_PUBLIC_API_URL=http://your-backend-url:5000/api');
+    console.error('  2. 앱을 재시작하세요');
+    console.error('');
+    console.error('개발 환경에서는 localhost를 사용합니다.');
+    console.error('╚══════════════════════════════════════════════════════════════╝');
+
+    // 개발 환경 fallback
+    return 'http://localhost:5000';
+  }
+
   return base;
 }
 
-const DEFAULT_ALLOWED = [
-  'https://carroll-foliicolous-conqueringly.ngrok-free.dev',
-  'https://intermetameric-horrifiedly-latoria.ngrok-free.dev',
-  'stonetify://oauth-finish',
-];
+// 기본 허용 도메인 (개발 환경용 - 프로덕션에서는 반드시 환경 변수 설정 필요)
+const getDefaultAllowedOrigins = () => {
+  const scheme = Constants.expoConfig?.scheme || 'stonetify';
+  return [
+    `${scheme}://oauth-finish`, // 앱 deep link
+  ];
+};
 
 function getAllowedReturnOrigins() {
-  const raw =
-    readExtra('EXPO_PUBLIC_ALLOWED_RETURN_ORIGINS', null);
-  if (!raw) return DEFAULT_ALLOWED;
+  const raw = readExtra('EXPO_PUBLIC_ALLOWED_RETURN_ORIGINS', null);
+
+  if (!raw) {
+    console.warn('⚠️  EXPO_PUBLIC_ALLOWED_RETURN_ORIGINS 환경 변수가 설정되지 않았습니다.');
+    console.warn('   프로덕션 환경에서는 반드시 설정해야 합니다.');
+    console.warn('   예시: EXPO_PUBLIC_ALLOWED_RETURN_ORIGINS=https://your-domain.com,stonetify://oauth-finish');
+    return getDefaultAllowedOrigins();
+  }
+
   return raw
     .split(',')
     .map(s => s.trim())

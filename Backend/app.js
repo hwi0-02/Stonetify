@@ -2,6 +2,18 @@ const express = require('express');
 const path = require('path');
 // 저장소 루트에서 실행할 때를 대비해 Backend 디렉터리의 .env를 명시적으로 불러온다
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+// 환경 변수 검증 (개발 환경에서만 엄격하게 검증)
+const { validateEnvironment } = require('./utils/envValidator');
+if (process.env.NODE_ENV !== 'production') {
+  console.log('\n🔍 개발 환경에서 환경 변수를 검증합니다...\n');
+  const envValidation = validateEnvironment();
+  // 개발 환경에서는 경고만 표시하고 계속 진행
+  if (!envValidation.valid) {
+    console.warn('⚠️  일부 환경 변수가 설정되지 않았습니다. 일부 기능이 작동하지 않을 수 있습니다.\n');
+  }
+}
+
 // Sentry 초기화 (DSN이 없으면 아무 동작도 하지 않음)
 let Sentry = null;
 try {
@@ -515,8 +527,8 @@ app.get(['/naver-callback', '/auth/naver/callback'], (req, res) => {
 // Firebase 연결 로그
 console.log('🔥 Firebase Realtime Database 연결됨');
 
-// 헬스 체크 엔드포인트
-app.get('/health', (req, res) => {
+// 헬스 체크 엔드포인트 (프론트엔드 기본 baseURL이 /api/를 포함하므로 두 경로 모두 허용)
+app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', ts: Date.now() });
 });
 
@@ -529,11 +541,41 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 const HTTPS_PORT = process.env.HTTPS_PORT || 5443;
 
+// 포트 바인딩 오류 핸들러
+const handleServerError = (error, serverType, port) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`╔══════════════════════════════════════════════════════════════╗`);
+    console.error(`║           ❌ ${serverType} 서버 시작 실패 ❌                 ║`);
+    console.error(`╚══════════════════════════════════════════════════════════════╝`);
+    console.error('');
+    console.error(`포트 ${port}이(가) 이미 사용 중입니다.`);
+    console.error('');
+    console.error('해결 방법:');
+    console.error(`  1. 포트 ${port}을(를) 사용 중인 프로세스를 종료하세요`);
+    console.error(`  2. .env 파일에서 다른 포트를 설정하세요 (PORT=${port + 1})`);
+    console.error('  3. 서버를 재시작하세요');
+    console.error('');
+    console.error(`╚══════════════════════════════════════════════════════════════╝`);
+    process.exit(1);
+  } else if (error.code === 'EACCES') {
+    console.error(`❌ 포트 ${port}에 바인딩할 권한이 없습니다. 관리자 권한으로 실행하세요.`);
+    process.exit(1);
+  } else {
+    console.error(`❌ ${serverType} 서버 오류:`, error.message);
+    process.exit(1);
+  }
+};
+
 // 개발 환경에서 자체 서명 인증서 생성 및 HTTPS 서버 시작
 if (process.env.NODE_ENV !== 'production') {
   // HTTP 서버 시작
-  app.listen(PORT, () => console.log(`HTTP Server started on port ${PORT}`));
-  
+  const httpServer = app.listen(PORT, () => {
+    console.log(`✅ HTTP Server started on port ${PORT}`);
+    console.log(`   URL: http://localhost:${PORT}`);
+  });
+
+  httpServer.on('error', (error) => handleServerError(error, 'HTTP', PORT));
+
   // 자체 서명 인증서로 HTTPS 서버 시작 (개발용)
   try {
     // 간단한 자체 서명 인증서 생성 (실제로는 openssl 등을 사용해야 함)
@@ -541,20 +583,25 @@ if (process.env.NODE_ENV !== 'production') {
       key: process.env.SSL_KEY_PATH ? fs.readFileSync(process.env.SSL_KEY_PATH) : null,
       cert: process.env.SSL_CERT_PATH ? fs.readFileSync(process.env.SSL_CERT_PATH) : null,
     };
-    
+
     if (httpsOptions.key && httpsOptions.cert) {
-      https.createServer(httpsOptions, app).listen(HTTPS_PORT, () => {
-        console.log(`HTTPS Server started on port ${HTTPS_PORT}`);
+      const httpsServer = https.createServer(httpsOptions, app).listen(HTTPS_PORT, () => {
+        console.log(`✅ HTTPS Server started on port ${HTTPS_PORT}`);
+        console.log(`   URL: https://localhost:${HTTPS_PORT}`);
       });
+      httpsServer.on('error', (error) => handleServerError(error, 'HTTPS', HTTPS_PORT));
     } else {
-      console.log('SSL certificates not found. Running HTTP only.');
-      console.log('To enable HTTPS, set SSL_KEY_PATH and SSL_CERT_PATH in .env file');
+      console.log('⚠️  SSL certificates not found. Running HTTP only.');
+      console.log('   To enable HTTPS, set SSL_KEY_PATH and SSL_CERT_PATH in .env file');
     }
   } catch (error) {
-    console.log('HTTPS setup failed:', error.message);
-    console.log('Running HTTP only');
+    console.log('⚠️  HTTPS setup failed:', error.message);
+    console.log('   Running HTTP only');
   }
 } else {
   // 프로덕션에서는 HTTPS만 사용
-  app.listen(PORT, () => console.log(`Production server started on port ${PORT}`));
+  const productionServer = app.listen(PORT, () => {
+    console.log(`✅ Production server started on port ${PORT}`);
+  });
+  productionServer.on('error', (error) => handleServerError(error, 'Production', PORT));
 }

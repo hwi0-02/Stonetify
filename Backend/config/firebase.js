@@ -17,13 +17,46 @@ const serviceAccount = {
 
 // Firebase Admin 초기화 가능 여부
 let initOk = true;
+const missingEnvVars = [];
+
+// 필수 환경 변수 검증
 if (!serviceAccount.project_id || typeof serviceAccount.project_id !== 'string') {
-  console.warn('[Firebase] Invalid or missing FIREBASE_PROJECT_ID. Firebase Admin will not be initialized.');
+  missingEnvVars.push('FIREBASE_PROJECT_ID');
   initOk = false;
 }
-if (!serviceAccount.private_key || !serviceAccount.client_email) {
-  console.warn('[Firebase] Missing private key or client email.');
+if (!serviceAccount.private_key) {
+  missingEnvVars.push('FIREBASE_PRIVATE_KEY');
   initOk = false;
+}
+if (!serviceAccount.client_email) {
+  missingEnvVars.push('FIREBASE_CLIENT_EMAIL');
+  initOk = false;
+}
+if (!process.env.FIREBASE_DATABASE_URL) {
+  missingEnvVars.push('FIREBASE_DATABASE_URL');
+  initOk = false;
+}
+
+// 환경 변수 누락 시 명확한 오류 메시지
+if (!initOk) {
+  console.error('╔══════════════════════════════════════════════════════════════╗');
+  console.error('║           ⚠️  FIREBASE 연결 실패 - 중요한 알림 ⚠️            ║');
+  console.error('╚══════════════════════════════════════════════════════════════╝');
+  console.error('');
+  console.error('다음 환경 변수가 누락되었거나 잘못되었습니다:');
+  missingEnvVars.forEach(varName => {
+    console.error(`  ❌ ${varName}`);
+  });
+  console.error('');
+  console.error('⚠️  서버가 IN-MEMORY 모드로 실행됩니다.');
+  console.error('⚠️  모든 데이터는 서버 재시작 시 삭제됩니다!');
+  console.error('');
+  console.error('해결 방법:');
+  console.error('  1. .env 파일에 누락된 Firebase 환경 변수를 추가하세요');
+  console.error('  2. Firebase 콘솔에서 서비스 계정 키를 다운로드하세요');
+  console.error('  3. 서버를 재시작하세요');
+  console.error('');
+  console.error('╚══════════════════════════════════════════════════════════════╝');
 }
 
 if (initOk && !admin.apps.length) {
@@ -32,15 +65,22 @@ if (initOk && !admin.apps.length) {
       credential: admin.credential.cert(serviceAccount),
       databaseURL: process.env.FIREBASE_DATABASE_URL
     });
-    console.log('[Firebase] Admin initialized:', serviceAccount.project_id);
+    console.log('✅ [Firebase] Admin successfully initialized:', serviceAccount.project_id);
+    console.log('✅ [Firebase] Database URL:', process.env.FIREBASE_DATABASE_URL);
   } catch (e) {
-    console.warn('[Firebase] Initialization failed:', e.message);
+    console.error('╔══════════════════════════════════════════════════════════════╗');
+    console.error('║           ⚠️  FIREBASE 초기화 실패 ⚠️                        ║');
+    console.error('╚══════════════════════════════════════════════════════════════╝');
+    console.error('');
+    console.error('오류 메시지:', e.message);
+    console.error('오류 스택:', e.stack);
+    console.error('');
+    console.error('⚠️  서버가 IN-MEMORY 모드로 실행됩니다.');
+    console.error('⚠️  모든 데이터는 서버 재시작 시 삭제됩니다!');
+    console.error('');
+    console.error('╚══════════════════════════════════════════════════════════════╝');
     initOk = false;
   }
-}
-
-if (!initOk) {
-  console.warn('[Firebase] Falling back to in-memory data store (tokens will reset on restart).');
 }
 
 

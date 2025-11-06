@@ -26,9 +26,48 @@ exports.exchangeCode = async (req, res) => {
     const { code, code_verifier, redirect_uri, userId, client_id } = req.body;
     console.log('[exchangeCode] Request received for userId:', userId);
 
+    // 필수 파라미터 검증
     if (!code || !code_verifier || !redirect_uri || !userId) {
-      console.error('[exchangeCode] Missing required parameters:', { code: !!code, code_verifier: !!code_verifier, redirect_uri: !!redirect_uri, userId: !!userId });
-      return res.status(400).json({ message: 'code, code_verifier, redirect_uri, userId required' });
+      console.error('[exchangeCode] Missing required parameters:', {
+        code: !!code,
+        code_verifier: !!code_verifier,
+        redirect_uri: !!redirect_uri,
+        userId: !!userId
+      });
+      return res.status(400).json({
+        message: 'code, code_verifier, redirect_uri, userId가 필요합니다.',
+        error: 'MISSING_REQUIRED_PARAMETERS'
+      });
+    }
+
+    // Client ID 검증
+    const finalClientId = client_id || process.env.SPOTIFY_CLIENT_ID;
+    if (!finalClientId) {
+      console.error('[exchangeCode] Spotify Client ID is not configured');
+      return res.status(500).json({
+        message: '서버 설정 오류: Spotify Client ID가 설정되지 않았습니다.',
+        error: 'MISSING_CLIENT_ID'
+      });
+    }
+
+    // Client ID 형식 검증 (기본적인 검증)
+    if (typeof finalClientId !== 'string' || finalClientId.length < 10) {
+      console.error('[exchangeCode] Invalid Spotify Client ID format');
+      return res.status(400).json({
+        message: 'Spotify Client ID 형식이 올바르지 않습니다.',
+        error: 'INVALID_CLIENT_ID'
+      });
+    }
+
+    // Redirect URI 형식 검증
+    try {
+      new URL(redirect_uri);
+    } catch (err) {
+      console.error('[exchangeCode] Invalid redirect_uri format:', redirect_uri);
+      return res.status(400).json({
+        message: 'Redirect URI 형식이 올바르지 않습니다.',
+        error: 'INVALID_REDIRECT_URI'
+      });
     }
 
     const existingToken = await SpotifyTokenModel.getByUser(userId);
@@ -42,24 +81,50 @@ exports.exchangeCode = async (req, res) => {
     params.append('redirect_uri', redirect_uri);
     params.append('code_verifier', code_verifier);
 
-    const { headers } = prepareTokenRequest(params, client_id);
+    const { headers } = prepareTokenRequest(params, finalClientId);
 
-    console.log('[exchangeCode] Requesting token from Spotify...');
-    const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+    console.log('[exchangeCode] Requesting token from Spotify with redirect_uri:', redirect_uri);
+    let tokenResp;
+    try {
+      tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+    } catch (axiosError) {
+      // Spotify API 오류 처리
+      const errorData = axiosError.response?.data;
+      console.error('[exchangeCode] Spotify API error:', errorData);
+
+      if (errorData?.error === 'invalid_grant') {
+        return res.status(400).json({
+          message: 'Spotify 인증 코드가 만료되었거나 올바르지 않습니다. 다시 로그인해주세요.',
+          error: 'INVALID_GRANT'
+        });
+      }
+
+      if (errorData?.error === 'redirect_uri_mismatch') {
+        return res.status(400).json({
+          message: 'Spotify Redirect URI가 일치하지 않습니다. Spotify Dashboard 설정을 확인해주세요.',
+          error: 'REDIRECT_URI_MISMATCH',
+          details: process.env.NODE_ENV === 'development' ? { redirect_uri } : undefined
+        });
+      }
+
+      throw axiosError;
+    }
+
     const { access_token, refresh_token, expires_in, scope, token_type } = tokenResp.data;
     console.log('[exchangeCode] New token obtained with scope:', scope);
 
     if (!access_token) {
       console.error('[exchangeCode] Spotify did not return an access token');
-      return res.status(502).json({
+      return res.status(400).json({
         message: 'Spotify 토큰 교환에 실패했습니다.',
         error: 'MISSING_ACCESS_TOKEN'
       });
     }
 
+    // Refresh token 검증 (첫 번째 인증이거나 기존 토큰이 없는 경우 필수)
     if (!refresh_token && !existingToken?.refresh_token_enc) {
       console.error('[exchangeCode] Spotify did not return a refresh token and no existing token is stored.');
-      return res.status(502).json({
+      return res.status(400).json({
         message: 'Spotify가 refresh token을 제공하지 않았습니다. Spotify를 다시 연결해주세요.',
         error: 'MISSING_REFRESH_TOKEN'
       });

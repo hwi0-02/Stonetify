@@ -19,6 +19,7 @@ const RETRY_DELAY = parseNumber(
   process.env.RETRY_DELAY,
   1000
 );
+const MAX_RETRIES = parseNumber(process.env.EXPO_PUBLIC_MAX_RETRIES, 3);
 
 const LOCAL_API_URL = process.env.EXPO_PUBLIC_LOCAL_API_URL ||
   process.env.DEV_API_URL ||
@@ -45,6 +46,7 @@ const CONFIG = {
   PROXY_PORT,
   TIMEOUT,
   RETRY_DELAY,
+  MAX_RETRIES,
   LOCAL_API_URL,
   TUNNEL_API_URL,
   PROXY_API_URL,
@@ -198,6 +200,57 @@ const isAuthEndpoint = (url) => {
   return AUTH_ENDPOINTS.some(endpoint => url.includes(endpoint));
 };
 
+// 네트워크 오류 감지 헬퍼 함수
+const isNetworkError = (error) => {
+  if (!error) return false;
+
+  // HTTP 응답이 있으면 네트워크 오류가 아님 (서버가 응답했음)
+  // 예외: 타임아웃은 재시도 가능
+  if (error.response && error.code !== 'ECONNABORTED') {
+    // 404, 400, 500 등은 서버가 정상 응답한 것이므로 재시도하지 않음
+    return false;
+  }
+
+  // 진짜 네트워크 오류 코드만 포함
+  const networkErrorCodes = [
+    'NETWORK_ERROR',    // 일반 네트워크 오류
+    'ECONNABORTED',     // 연결 중단 (타임아웃)
+    'ECONNREFUSED',     // 연결 거부 (서버 미실행)
+    'ENOTFOUND',        // DNS 조회 실패
+    'ETIMEDOUT',        // 타임아웃
+    'EHOSTUNREACH',     // 호스트 도달 불가
+    'ENETUNREACH',      // 네트워크 도달 불가
+    'ERR_NETWORK',      // Axios 네트워크 오류
+    'ERR_CONNECTION_REFUSED', // Axios 연결 거부
+  ];
+
+  return networkErrorCodes.includes(error.code) ||
+         (error.message && error.message.toLowerCase().includes('network')) ||
+         (!error.response && error.request); // 응답 없음 = 네트워크 문제
+};
+
+// Exponential backoff 계산
+const calculateBackoff = (retryCount) => {
+  return Math.min(CONFIG.RETRY_DELAY * Math.pow(2, retryCount), 10000); // 최대 10초
+};
+
+// 사용자 친화적인 오류 메시지 생성
+const getNetworkErrorMessage = (error) => {
+  if (error.code === 'ECONNREFUSED') {
+    return '서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.';
+  }
+  if (error.code === 'ENOTFOUND') {
+    return '서버를 찾을 수 없습니다. 인터넷 연결을 확인해주세요.';
+  }
+  if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+    return '서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.';
+  }
+  if (error.code === 'EHOSTUNREACH' || error.code === 'ENETUNREACH') {
+    return '네트워크에 연결할 수 없습니다. 인터넷 연결을 확인해주세요.';
+  }
+  return '네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+};
+
 // 요청 인터셉터 (토큰 자동 추가 + 캐싱)
 api.interceptors.request.use(async (config) => {
   const token = await AsyncStorage.getItem('token');
@@ -284,11 +337,38 @@ api.interceptors.response.use(
       return Promise.reject(revokedError);
     }
     
-    // ?�트?�크 ?�류 ?�시??로직
-    if ((error.code === 'NETWORK_ERROR' || error.code === 'ECONNABORTED') && !originalRequest._retry) {
-      originalRequest._retry = true;
-      await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
-      return api(originalRequest);
+    // 네트워크 오류 재시도 로직 (Exponential Backoff)
+    if (isNetworkError(error)) {
+      const retryCount = originalRequest._retryCount || 0;
+
+      if (retryCount < CONFIG.MAX_RETRIES) {
+        originalRequest._retryCount = retryCount + 1;
+        const backoffDelay = calculateBackoff(retryCount);
+
+        console.warn(`🔄 네트워크 오류 재시도 중 (${retryCount + 1}/${CONFIG.MAX_RETRIES}):`, {
+          url: originalRequest.url,
+          errorCode: error.code,
+          errorMessage: error.message,
+          backoffDelay: `${backoffDelay}ms`
+        });
+
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+        return api(originalRequest);
+      } else {
+        // 최대 재시도 횟수 초과
+        const friendlyMessage = getNetworkErrorMessage(error);
+        console.error('❌ 네트워크 오류 재시도 실패:', {
+          url: originalRequest.url,
+          errorCode: error.code,
+          errorMessage: error.message,
+          friendlyMessage,
+          retriesAttempted: retryCount
+        });
+
+        // 오류 객체에 사용자 친화적 메시지 추가
+        error.userMessage = friendlyMessage;
+        error.isNetworkError = true;
+      }
     }
     
     // 401 에러 - 토큰 만료 또는 인증 실패
@@ -651,7 +731,8 @@ export const getGeminiRecommendations = ({ mood, activity } = {}) => {
 export const postRecommendationFeedback = (feedbackData) => api.post('recommendations/feedback', feedbackData).then(res => res.data);
 
 // Utility APIs
-export const healthCheck = () => api.get('../health').then(res => res.data);
+// '/health' 절대 경로 사용 (baseURL 밖에 있음)
+export const healthCheck = () => api.get('/health').then(res => res.data);
 
 
 // ==================== DEFAULT EXPORT ====================
