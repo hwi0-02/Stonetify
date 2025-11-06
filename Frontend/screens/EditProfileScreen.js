@@ -164,8 +164,9 @@ const EditProfileScreen = ({ navigation }) => {
 
       <ScrollView
         contentContainerStyle={styles.contentContainer}
-        scrollEnabled={!isLoading} 
+        scrollEnabled={!isLoading}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
 
         <View style={styles.profileSection}>
@@ -219,6 +220,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   contentContainer: {
+    paddingTop: 8,
     paddingBottom: 40,
   },
   header: {
@@ -226,7 +228,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingTop: 12,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#282828',
@@ -239,7 +241,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     textAlign: 'center',
-    paddingTop: 52,
+    paddingTop: 12,
     paddingVertical: 8,
   },
   backButton: {
@@ -267,7 +269,7 @@ const styles = StyleSheet.create({
   },
   profileSection: {
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 16,
   },
   profileImage: {
     width: 120,
@@ -305,8 +307,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteButtonText: {
-    color: '#888',
+    color: '#ff4444',
     fontSize: 16,
+    fontWeight: '600',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,

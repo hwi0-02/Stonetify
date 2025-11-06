@@ -338,15 +338,24 @@ const likePlaylist = asyncHandler(async (req, res) => {
 
     const existingLike = await LikedPlaylist.findByUserAndPlaylist(userId, playlistId);
 
+    let liked;
     if (existingLike) {
         // 좋아요 취소
         await LikedPlaylist.delete(existingLike.id);
-        res.status(200).json({ message: '플레이리스트 좋아요가 취소되었습니다.', liked: false });
+        liked = false;
     } else {
         // 좋아요 추가
         await LikedPlaylist.create({ user_id: userId, playlist_id: playlistId });
-        res.status(200).json({ message: '플레이리스트를 좋아요했습니다.', liked: true });
+        liked = true;
     }
+
+    const updatedLikeCount = await LikedPlaylist.getLikeCount(playlistId);
+
+    res.status(200).json({
+        message: liked ? '플레이리스트를 좋아요했습니다.' : '플레이리스트 좋아요가 취소되었습니다.',
+        liked,
+        likeCount: updatedLikeCount,
+    });
 });
 
 // 좋아요한 플레이리스트 목록 조회

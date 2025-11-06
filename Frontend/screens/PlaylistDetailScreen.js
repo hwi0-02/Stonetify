@@ -121,7 +121,6 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  const [isLiked, setIsLiked] = useState(false);
   const [likeInflight, setLikeInflight] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
@@ -151,10 +150,8 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
     if (currentPlaylist) {
       setEditTitle(currentPlaylist.title || '');
       setEditDescription(currentPlaylist.description || '');
-      const liked = !!(likedPlaylists || []).find(p => p.id === currentPlaylist.id) || currentPlaylist.liked || false;
-      setIsLiked(liked);
     }
-  }, [currentPlaylist, likedPlaylists]);
+  }, [currentPlaylist]);
 
   useEffect(() => {
     if (!currentPlaylist || !currentPlaylist.id) {
@@ -351,11 +348,9 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
 
     try {
       await dispatch(deletePlaylistAsync(targetPlaylistId)).unwrap();
-      await Promise.all([
-        dispatch(fetchMyPlaylists()),
-        dispatch(fetchLikedPlaylists()),
-      ]);
       setDeleteModalVisible(false);
+      dispatch(fetchMyPlaylists());
+      dispatch(fetchLikedPlaylists());
       await showToast('플레이리스트를 삭제했습니다.', 2000);
       navigation.reset({
         index: 0,
@@ -477,13 +472,12 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       const saved = await dispatch(savePlaylistAsync(currentPlaylist.id)).unwrap();
       console.log('✅ [담기] savePlaylistAsync 성공:', saved);
 
-      console.log('🔄 [담기] 플레이리스트 목록 새로고침 중...');
-      await dispatch(fetchMyPlaylists());
-      console.log('✅ [담기] 플레이리스트 목록 새로고침 완료');
+      console.log('🔄 [담기] 플레이리스트 목록 새로고침 트리거...');
+      dispatch(fetchMyPlaylists());
 
       const savedTitle = currentPlaylist.title || saved?.title || '플레이리스트';
       console.log('🎉 [담기] 성공 메시지 표시:', savedTitle);
-      await showToast('플레이리스트가 추가되었습니다.', 2000);
+      await showToast('플레이리스트를 담았어요!', 2000);
     } catch (error) {
       console.error('❌ [담기] 오류 발생:', error);
       console.error('❌ [담기] 오류 타입:', typeof error);
@@ -508,12 +502,17 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
   const handleToggleLike = async () => {
     if (!currentPlaylist?.id) return;
     try {
-      const result = await dispatch(toggleLikePlaylist(currentPlaylist.id)).unwrap();
-      setIsLiked(result.liked);
+      await dispatch(toggleLikePlaylist(currentPlaylist.id)).unwrap();
     } catch (error) {
       Alert.alert('오류', '좋아요 처리 중 문제가 발생했습니다.');
     }
   };
+
+  // Redux state에서 직접 isLiked 계산
+  const isLiked = useMemo(() => {
+    if (!currentPlaylist?.id) return false;
+    return !!(likedPlaylists || []).find(p => p.id === currentPlaylist.id) || currentPlaylist.liked || false;
+  }, [currentPlaylist?.id, currentPlaylist?.liked, likedPlaylists]);
 
   const handleToggleSongLike = async (song) => {
     const key = song?.id || song?.spotify_id;
@@ -662,10 +661,10 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
             showLikeButton
             onLikePress={handleToggleSongLike}
             liked={!!(likedSongsMap[item?.id] || likedSongsMap[item?.spotify_id])}
-            showHamburgerButton
+            showHamburgerButton={isOwner}
             onHamburgerPress={handleHamburgerPress}
-            onDrag={!isWeb ? drag : undefined}
-            isDragging={!isWeb && isActive}
+            onDrag={!isWeb && isOwner ? drag : undefined}
+            isDragging={!isWeb && isOwner && isActive}
           />
         );
       },
@@ -686,7 +685,7 @@ const PlaylistDetailScreen = ({ route, navigation }) => {
       updateCellsBatchingPeriod: 50,
     };
 
-    if (isWeb) {
+    if (isWeb || !isOwner) {
       return <FlatList {...listProps} />;
     }
 

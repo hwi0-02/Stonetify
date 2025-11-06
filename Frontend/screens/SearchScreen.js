@@ -1,6 +1,16 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TextInput, FlatList, SectionList, TouchableOpacity, Modal, Alert, ActivityIndicator,ImageBackground,
-  SafeAreaView, } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  FlatList,
+  SectionList,
+  TouchableOpacity,
+  Modal,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { Image } from 'expo-image';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchLikedSongs, toggleLikeSongThunk } from '../store/slices/likedSongsSlice';
@@ -12,6 +22,7 @@ import debounce from 'lodash.debounce';
 import { playTrack, loadQueue } from '../store/slices/playerSlice';
 import { fetchMyPlaylists, createPlaylist } from '../store/slices/playlistSlice';
 import { loadSearchHistory, addRecentSearch, removeRecentSearch, clearSearchHistory } from '../store/slices/searchSlice';
+import { showToast } from '../utils/toast';
 
 const placeholderImage = require('../assets/images/placeholder_album.png');
 
@@ -32,7 +43,13 @@ const SearchScreen = () => {
   const navigation = useNavigation();
   const route = useRoute(); // ❗ useRoute 훅 사용
 
-  const { isCreatingPlaylist, playlistTitle, playlistDescription } = route.params || {}; // ❗ 파라미터 가져오기
+  const {
+    isCreatingPlaylist,
+    playlistTitle,
+    playlistDescription,
+    targetPlaylistId,
+    targetPlaylistTitle,
+  } = route.params || {}; // ❗ 파라미터 가져오기
 
   const { userPlaylists, status: playlistStatus } = useSelector((state) => state.playlist);
   const { history } = useSelector((state) => state.search);
@@ -49,9 +66,15 @@ const SearchScreen = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedSong, setSelectedSong] = useState(null);
   const [newlyCreatedPlaylistId, setNewlyCreatedPlaylistId] = useState(null); // ❗ 새로 추가
+  const [isFinalizingPlaylist, setIsFinalizingPlaylist] = useState(false);
   const [likeInflight, setLikeInflight] = useState({});
 
   const [selectedPlaylistId, setSelectedPlaylistId] = useState(null);
+
+  const isTrackOnlyMode = useMemo(
+    () => Boolean(isCreatingPlaylist || targetPlaylistId),
+    [isCreatingPlaylist, targetPlaylistId]
+  );
 
   const canPlayFullTracks = useMemo(() => {
     const hasToken = !!spotifyState?.accessToken;
@@ -75,7 +98,7 @@ const SearchScreen = () => {
 
   // 좋아요한 곡 화면은 Redux likedSongsSlice.list를 직접 사용합니다.
 
-  const search = async (searchQuery) => {
+  const search = useCallback(async (searchQuery) => {
     if (!searchQuery) {
       setResults([]);
       return;
@@ -83,14 +106,23 @@ const SearchScreen = () => {
 
     setLoading(true);
     try {
-      const [trackResults, playlistResults] = await Promise.all([
-        apiService.searchTracks(searchQuery),
-        apiService.searchPlaylists(searchQuery),
-      ]);
+      let trackResults = [];
+      let playlistResults = [];
+
+      if (isTrackOnlyMode) {
+        trackResults = await apiService.searchTracks(searchQuery);
+      } else {
+        const [trackResponse, playlistResponse] = await Promise.all([
+          apiService.searchTracks(searchQuery),
+          apiService.searchPlaylists(searchQuery),
+        ]);
+        trackResults = trackResponse;
+        playlistResults = playlistResponse;
+      }
 
       const sections = [];
 
-      if (playlistResults && playlistResults.length > 0) {
+      if (!isTrackOnlyMode && playlistResults && playlistResults.length > 0) {
         sections.push({
           title: '플레이리스트',
           data: playlistResults.slice(0, 3).map((playlist) => ({
@@ -117,19 +149,30 @@ const SearchScreen = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isTrackOnlyMode]);
 
-  const debouncedSearch = useCallback(debounce(search, 500), []);
+  const debouncedSearch = useMemo(() => debounce(search, 500), [search]);
+
+  useEffect(() => {
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [debouncedSearch]);
 
   const handleQueryChange = (text) => {
     setQuery(text);
-    debouncedSearch(text);
+    if (!text) {
+      debouncedSearch.cancel();
+      search(text);
+    } else {
+      debouncedSearch(text);
+    }
   };
 
   const openPlaylistModal = async (song) => {
     setSelectedSong(song);
     setModalVisible(true);
-    setSelectedPlaylistId(null); // <-- 선택 초기화
+    setSelectedPlaylistId(targetPlaylistId ?? null); // <-- 선택 초기화
   };
 
   const toggleShowLiked = () => {
@@ -141,24 +184,26 @@ const SearchScreen = () => {
   };
 
   const handleConfirmAddSong = () => {
-    // '새 플레이리스트'가 선택된 경우 (ID가 null)
-    if (selectedPlaylistId === null && isCreatingPlaylist) {
-      handleAddSongToPlaylist(null);
-    }
-    // 기존 플레이리스트가 선택된 경우
-    else if (selectedPlaylistId) {
-      handleAddSongToPlaylist(selectedPlaylistId);
-    }
-    // 아무것도 선택되지 않은 경우
-    else {
+    if (selectedPlaylistId === null) {
+      if (isCreatingPlaylist) {
+        handleAddSongToPlaylist(null);
+        return;
+      }
+      if (targetPlaylistId) {
+        handleAddSongToPlaylist(targetPlaylistId);
+        return;
+      }
       Alert.alert('알림', '추가할 플레이리스트를 선택해주세요.');
+      return;
     }
+
+    handleAddSongToPlaylist(selectedPlaylistId);
   };
 
   const handleAddSongToPlaylist = async (playlistId) => {
     if (!selectedSong) return;
 
-    let targetPlaylistId = playlistId;
+    let resolvedPlaylistId = playlistId ?? newlyCreatedPlaylistId;
 
     try {
       // ❗ 새 플레이리스트 생성 플로우
@@ -169,22 +214,35 @@ const SearchScreen = () => {
           description: playlistDescription,
           is_public: true,
         })).unwrap(); // unwrap()을 사용하여 fulfilled 또는 rejected 값을 직접 가져옴
-        targetPlaylistId = newPlaylist.id;
+        resolvedPlaylistId = newPlaylist.id;
         setNewlyCreatedPlaylistId(newPlaylist.id); // 생성된 플레이리스트 ID 저장
+        setSelectedPlaylistId(newPlaylist.id);
       }
 
-      await apiService.addSongToPlaylist(targetPlaylistId, selectedSong);
-      dispatch(fetchMyPlaylists()); // ❗ 추가: 플레이리스트 목록 새로고침
+      if (!resolvedPlaylistId) {
+        Alert.alert('오류', '추가할 플레이리스트를 찾지 못했습니다.');
+        return;
+      }
+
+      await apiService.addSongToPlaylist(resolvedPlaylistId, selectedSong);
+      await dispatch(fetchMyPlaylists()).unwrap(); // ❗ 추가: 플레이리스트 목록 새로고침
       setModalVisible(false);
-      Alert.alert('성공', `'${selectedSong.name}' 곡이 플레이리스트에 추가되었습니다.`);
+      const addedSongLabel = selectedSong.name || selectedSong.title || '곡';
+      await showToast(`'${addedSongLabel}'을 플레이리스트에 추가했습니다.`, 1600);
       setSelectedSong(null);
 
       // 새 플레이리스트 생성 후 곡 추가가 완료되면 CreatePlaylistScreen으로 돌아가지 않고 SearchScreen에 머무름
     } catch (error) {
-      const errorMessage = error.response?.data?.message || '곡 추가에 실패했습니다.';
+      const errorMessage =
+        error?.response?.data?.message ||
+        (typeof error === 'string' ? error : error?.message) ||
+        '곡 추가에 실패했습니다.';
       Alert.alert('오류', errorMessage);
     }
   };
+
+  const isAddDisabled =
+    selectedPlaylistId === null && !isCreatingPlaylist && !targetPlaylistId;
 
   const handlePlayTrack = (track) => {
     if (!canPlayFullTracks) {
@@ -234,56 +292,72 @@ const SearchScreen = () => {
   };
 
   const recentSearchSections = useMemo(() => {
-    const playlists = history.filter((item) => item.type === 'playlist');
-    const tracks = history.filter((item) => item.type === 'track');
     const sections = [];
 
-    if (playlists.length > 0) {
-      sections.push({ title: '플레이리스트', data: playlists });
+    if (!isTrackOnlyMode) {
+      const playlists = history.filter((item) => item.type === 'playlist');
+      if (playlists.length > 0) {
+        sections.push({ title: '플레이리스트', data: playlists });
+      }
     }
 
+    const tracks = history.filter((item) => item.type === 'track');
     if (tracks.length > 0) {
       sections.push({ title: '음원', data: tracks });
     }
 
     return sections;
-  }, [history]);
+  }, [history, isTrackOnlyMode]);
 
   const handleRecentItemPress = (item) => {
     if (item.type === 'track') {
       handlePlayTrack(item.data);
     } else if (item.type === 'playlist') {
+      if (isTrackOnlyMode) {
+        return;
+      }
       handlePlaylistPress(item.data);
     }
   };
 
 
-  const renderRecentSearchItem = ({ item }) => (
-    <TouchableOpacity style={styles.recentItem} onPress={() => handleRecentItemPress(item)}>
-      {item.type === 'track' && (
-        <Ionicons name="musical-notes-outline" size={24} color="#b3b3b3" style={styles.recentIcon} />
-      )}
-      {item.type === 'playlist' && (
-        <Ionicons name="list-outline" size={24} color="#b3b3b3" style={styles.recentIcon} />
-      )}
-      <View style={styles.recentTextContainer}>
-        <Text style={styles.recentText} numberOfLines={1}>
-          {item.data?.title || item.data?.name || '알 수 없는 항목'}
-        </Text>
+  const renderRecentSearchItem = ({ item }) => {
+    if (isTrackOnlyMode && item.type !== 'track') {
+      return null;
+    }
+
+    return (
+      <TouchableOpacity style={styles.recentItem} onPress={() => handleRecentItemPress(item)}>
         {item.type === 'track' && (
-          <Text style={styles.recentSubText} numberOfLines={1}>
-            {item.data?.artists?.map((artist) => artist.name).join(', ') || 'Unknown Artist'}
-          </Text>
+          <Ionicons
+            name="musical-notes-outline"
+            size={24}
+            color="#b3b3b3"
+            style={styles.recentIcon}
+          />
         )}
-      </View>
-      <TouchableOpacity
-        onPress={() => dispatch(removeRecentSearch(item))}
-        style={styles.removeRecentButton}
-      >
-        <Ionicons name="close" size={22} color="#6a6a6a" />
+        {item.type === 'playlist' && (
+          <Ionicons name="list-outline" size={24} color="#b3b3b3" style={styles.recentIcon} />
+        )}
+        <View style={styles.recentTextContainer}>
+          <Text style={styles.recentText} numberOfLines={1}>
+            {item.data?.title || item.data?.name || '알 수 없는 항목'}
+          </Text>
+          {item.type === 'track' && (
+            <Text style={styles.recentSubText} numberOfLines={1}>
+              {item.data?.artists?.map((artist) => artist.name).join(', ') || 'Unknown Artist'}
+            </Text>
+          )}
+        </View>
+        <TouchableOpacity
+          onPress={() => dispatch(removeRecentSearch(item))}
+          style={styles.removeRecentButton}
+        >
+          <Ionicons name="close" size={22} color="#6a6a6a" />
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   const renderTrackListItem = (item) => {
     const trackKey = item.spotify_id || item.id || null;
@@ -323,15 +397,38 @@ const SearchScreen = () => {
   };
 
   // 플레이리스트 생성 완료 함수
-  const handleSavePlaylist = () => {
-    if (newlyCreatedPlaylistId) {
-      // 저장 후 목록 새로고침
-      dispatch(fetchMyPlaylists());
-      // 생성 모드 해제 및 상태 정리
+  const handleSavePlaylist = useCallback(async () => {
+    if (!newlyCreatedPlaylistId) {
+      Alert.alert('오류', '플레이리스트를 먼저 생성해주세요.');
+      return;
+    }
+
+    if (isFinalizingPlaylist) {
+      return;
+    }
+
+    setIsFinalizingPlaylist(true);
+
+    let refreshSucceeded = false;
+
+    try {
+      await dispatch(fetchMyPlaylists()).unwrap();
+      refreshSucceeded = true;
+      await showToast('플레이리스트가 저장되었습니다.', 1800);
+    } catch (error) {
+      console.error('Failed to refresh playlists after save:', error);
+      const message = error?.message || '플레이리스트 목록을 새로고침하지 못했습니다.';
+      Alert.alert('오류', message);
+    } finally {
+      setIsFinalizingPlaylist(false);
+      if (!refreshSucceeded) {
+        return;
+      }
+
       setModalVisible(false);
       setSelectedSong(null);
+      setSelectedPlaylistId(null);
       setNewlyCreatedPlaylistId(null);
-      // Search 화면을 기본 상태로 전환 (params 제거)
       if (navigation.setParams) {
         navigation.setParams({
           isCreatingPlaylist: false,
@@ -339,12 +436,9 @@ const SearchScreen = () => {
           playlistDescription: undefined,
         });
       }
-      // Search 탭으로 명시적 이동 (기본 검색 화면)
-      navigation.navigate('Main', { screen: 'Search' });
-    } else {
-      Alert.alert('오류', '플레이리스트를 먼저 생성해주세요.');
+      navigation.navigate('Main', { screen: 'Profile' });
     }
-  };
+  }, [dispatch, newlyCreatedPlaylistId, navigation, isFinalizingPlaylist]);
 
   // Update header buttons: save button and liked toggle
   useLayoutEffect(() => {
@@ -352,7 +446,11 @@ const SearchScreen = () => {
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {isCreatingPlaylist && newlyCreatedPlaylistId ? (
-            <TouchableOpacity onPress={handleSavePlaylist} style={styles.saveNavButton}>
+            <TouchableOpacity
+              onPress={handleSavePlaylist}
+              style={[styles.saveNavButton, isFinalizingPlaylist && styles.saveNavButtonDisabled]}
+              disabled={isFinalizingPlaylist}
+            >
               <Text style={styles.saveNavButtonText}>저장</Text>
             </TouchableOpacity>
           ) : null}
@@ -363,7 +461,7 @@ const SearchScreen = () => {
         </View>
       ),
     });
-  }, [navigation, isCreatingPlaylist, newlyCreatedPlaylistId, showLiked]);
+  }, [navigation, isCreatingPlaylist, newlyCreatedPlaylistId, showLiked, handleSavePlaylist, isFinalizingPlaylist]);
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -372,8 +470,9 @@ const SearchScreen = () => {
           <View style={styles.headerActions}>
             {isCreatingPlaylist && newlyCreatedPlaylistId ? (
               <TouchableOpacity 
-                style={styles.saveButton} 
+                style={[styles.saveButton, isFinalizingPlaylist && styles.saveButtonDisabled]} 
                 onPress={handleSavePlaylist}
+                disabled={isFinalizingPlaylist}
               >
                 <Text style={styles.saveButtonText}>저장</Text>
               </TouchableOpacity>
@@ -385,12 +484,20 @@ const SearchScreen = () => {
           </View>
         </View>
         {isCreatingPlaylist && (
-          <View style={styles.playlistInfoBox}> {/* [변경] 이름 충돌 방지 */}
+          <View style={styles.playlistInfoBox}>
             <Text style={styles.playlistTitle}>
-              '{playlistTitle}' 생성 중...</Text>
+              '{playlistTitle || '새 플레이리스트'}' 생성 중...</Text>
             {newlyCreatedPlaylistId && (
               <Text style={styles.playlistSubtext}>곡을 추가한 후 저장 버튼을 눌러주세요</Text>
             )}
+          </View>
+        )}
+        {!isCreatingPlaylist && targetPlaylistId && (
+          <View style={styles.playlistInfoBox}>
+            <Text style={styles.playlistTitle}>
+              '{targetPlaylistTitle || '플레이리스트'}'에 곡을 추가하고 있어요
+            </Text>
+            <Text style={styles.playlistSubtext}>곡을 선택하고 추가 버튼을 눌러주세요</Text>
           </View>
         )}
       </View>
@@ -438,6 +545,9 @@ const SearchScreen = () => {
                 keyExtractor={(item, index) => `${item.type || 'track'}-${item.id || item.spotify_id || index}`}
                 renderItem={({ item }) => {
                   if (item.type === 'playlist') {
+                    if (isTrackOnlyMode) {
+                      return null;
+                    }
                     return <PlaylistListItem item={item} onPress={handlePlaylistPress} />;
                   }
                   return renderTrackListItem(item);
@@ -471,7 +581,11 @@ const SearchScreen = () => {
               )}
             />
           ) : (
-            <Text style={styles.emptyText}>다른 사용자의 플레이리스트를 검색해보세요.</Text>
+            <Text style={styles.emptyText}>
+              {isTrackOnlyMode
+                ? '추가할 곡을 검색해보세요.'
+                : '다른 사용자의 플레이리스트를 검색해보세요.'}
+            </Text>
           )}
         </View>
       )}
@@ -502,7 +616,7 @@ const SearchScreen = () => {
                 </View>
                 <View style={styles.playlistItemTextContainer}>
                   <Text style={styles.playlistTitle} numberOfLines={1}>
-                    새 플레이리스트 '{playlistTitle}'에 추가
+                    새 플레이리스트 '{playlistTitle || '새 플레이리스트'}'에 추가
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -563,10 +677,10 @@ const SearchScreen = () => {
             <TouchableOpacity
               style={[
                 styles.modalAddButton,
-                (selectedPlaylistId === null && !isCreatingPlaylist) && styles.modalButtonDisabled
+                isAddDisabled && styles.modalButtonDisabled
               ]}
               onPress={handleConfirmAddSong}
-              disabled={(selectedPlaylistId === null && !isCreatingPlaylist)}
+              disabled={isAddDisabled}
             >
 
               <Text style={styles.modalButtonText}>추가</Text>
@@ -623,6 +737,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#b04ad8ff',
     marginRight: 8,
+  },
+  saveNavButtonDisabled: {
+    opacity: 0.6,
   },
   saveNavButtonText: {
     color: '#121212',

@@ -5,7 +5,7 @@ const { encrypt, decrypt } = require('../utils/encryption');
 const inMemoryTokens = new Map();
 
 const DEFAULT_HISTORY_LIMIT = 5;
-const DEFAULT_MAX_ROTATIONS_PER_HOUR = 12;
+const DEFAULT_MAX_ROTATIONS_PER_HOUR = 20;
 
 function generateId() {
   if (typeof crypto.randomUUID === 'function') {
@@ -18,6 +18,11 @@ function computeRotationWindow(existing, now, options) {
   const hourMs = 60 * 60 * 1000;
   const maxPerHour = options.maxPerHour || DEFAULT_MAX_ROTATIONS_PER_HOUR;
   let rotationWindow = existing?.rotation_count_window;
+
+  // 첫 번째 토큰 교환 (초기 인증)은 카운트하지 않음
+  if (!existing) {
+    return { count: 0, window_start: now };
+  }
 
   if (!rotationWindow) {
     rotationWindow = { count: 0, window_start: now };

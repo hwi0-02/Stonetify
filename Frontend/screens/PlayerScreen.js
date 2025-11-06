@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Image, TouchableOpacity, Dimensions, ActivityIndicator, BackHandler, Modal, FlatList } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +19,9 @@ const PlayerScreen = ({ navigation }) => {
   const [devices, setDevices] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [loadingDevices, setLoadingDevices] = useState(false);
+  const [displayPosition, setDisplayPosition] = useState(0);
+  const [pendingSeekValue, setPendingSeekValue] = useState(null);
+  const requestedSeekRef = useRef(null); // preserve target position until backend polling confirms
 
   useEffect(() => {
     if (!currentTrack) {
@@ -92,16 +95,114 @@ const PlayerScreen = ({ navigation }) => {
   };
 
   const formatTime = useCallback((ms) => {
+    if (typeof ms !== 'number' || Number.isNaN(ms) || ms < 0) {
+      return '0:00';
+    }
     const total = Math.floor(ms / 1000);
     const m = Math.floor(total / 60);
     const s = total % 60;
-    return `${m}:${s < 10 ? '0'+s : s}`;
+    return `${m}:${s < 10 ? `0${s}` : s}`;
   }, []);
 
-  const onSlidingStart = () => dispatch(setSeekInProgress(true));
-  const onSlidingComplete = (val) => {
+  const safePosition = Number.isFinite(position) ? Math.max(0, position) : 0;
+  const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
+  const sliderValue = seekInProgress && pendingSeekValue !== null ? pendingSeekValue : displayPosition;
+
+  const clampToDuration = useCallback(
+    (value) => {
+      if (!Number.isFinite(value)) {
+        return 0;
+      }
+      if (safeDuration > 0) {
+        return Math.max(0, Math.min(value, safeDuration));
+      }
+      return Math.max(0, value);
+    },
+    [safeDuration]
+  );
+
+  useEffect(() => {
+    if (seekInProgress) {
+      return;
+    }
+
+    const normalized = clampToDuration(safePosition);
+    const pendingTarget = requestedSeekRef.current;
+
+    if (pendingTarget !== null) {
+      const diff = Math.abs(normalized - pendingTarget);
+      if (diff <= 750) {
+        requestedSeekRef.current = null;
+        setPendingSeekValue(null);
+        setDisplayPosition(normalized);
+      }
+      return;
+    }
+
+    setDisplayPosition((prev) => {
+      if (Math.abs(prev - normalized) > 750) {
+        return normalized;
+      }
+      return prev;
+    });
+  }, [safePosition, seekInProgress, clampToDuration]);
+
+  useEffect(() => {
+    setDisplayPosition((prev) => clampToDuration(prev));
+  }, [safeDuration, clampToDuration]);
+
+  useEffect(() => {
+    requestedSeekRef.current = null;
+    setPendingSeekValue(null);
+    setDisplayPosition(clampToDuration(safePosition));
+  }, [currentTrack?.id, clampToDuration, safePosition]);
+
+  useEffect(() => {
+    if (!isPlaying || seekInProgress || safeDuration <= 0) {
+      return;
+    }
+
+    // Locally tick the progress bar between backend status snapshots.
+    let lastTick = Date.now();
+    const intervalId = setInterval(() => {
+      const now = Date.now();
+      const delta = now - lastTick;
+      lastTick = now;
+      setDisplayPosition((prev) => {
+        const baseline = Math.max(prev, safePosition);
+        return clampToDuration(baseline + delta);
+      });
+    }, 200);
+
+    return () => clearInterval(intervalId);
+  }, [isPlaying, seekInProgress, safeDuration, safePosition, clampToDuration]);
+
+  const onSlidingStart = () => {
+    const normalized = clampToDuration(displayPosition);
+    setPendingSeekValue(normalized);
+    dispatch(setSeekInProgress(true));
+  };
+
+  const onSlidingComplete = async (val) => {
+    const clamped = clampToDuration(val);
+    requestedSeekRef.current = clamped;
+    setPendingSeekValue(clamped);
+    setDisplayPosition(clamped);
     dispatch(setSeekInProgress(false));
-    dispatch(setPosition(Math.floor(val)));
+    try {
+      await dispatch(setPosition(Math.floor(clamped))).unwrap();
+    } catch (error) {
+      console.warn('Seek failed:', error);
+      requestedSeekRef.current = null;
+      setPendingSeekValue(null);
+      setDisplayPosition(clampToDuration(safePosition));
+    }
+  };
+
+  const handleSliderChange = (val) => {
+    const normalized = clampToDuration(val);
+    setPendingSeekValue(normalized);
+    setDisplayPosition(normalized);
   };
 
   if (__DEV__) {
@@ -121,11 +222,6 @@ const PlayerScreen = ({ navigation }) => {
         <Ionicons name="chevron-down" size={32} color="white" />
       </TouchableOpacity>
       
-      <TouchableOpacity onPress={() => { fetchDevices(); setDeviceModalVisible(true); }} style={styles.deviceButton}>
-        <Ionicons name="radio" size={24} color="#1DB954" />
-        <Text style={styles.deviceButtonText}>{selectedDevice?.name || '디바이스'}</Text>
-      </TouchableOpacity>
-      
       <View style={styles.content}>
         <View style={styles.albumArtContainer}>
             <Image 
@@ -137,27 +233,30 @@ const PlayerScreen = ({ navigation }) => {
             )}
         </View>
 
-        <View style={styles.songDetails}>
-          <Text style={styles.title}>{currentTrack.name}</Text>
-          <Text style={styles.artist}>{currentTrack.artists}</Text>
+        <View style={styles.songInfoSection}>
+          <View style={styles.songDetails}>
+            <Text style={styles.title} numberOfLines={1}>{currentTrack.name}</Text>
+            <Text style={styles.artist} numberOfLines={1}>{currentTrack.artists}</Text>
+          </View>
         </View>
 
         <View style={styles.progressSection}>
           <Slider
             style={{ width: '100%', height: 40 }}
             minimumValue={0}
-            maximumValue={duration || 0}
-            value={position}
+            maximumValue={safeDuration}
+            value={sliderValue}
             minimumTrackTintColor="#fff"
             maximumTrackTintColor="#555"
             thumbTintColor="#fff"
             onSlidingStart={onSlidingStart}
+            onValueChange={handleSliderChange}
             onSlidingComplete={onSlidingComplete}
-            disabled={!duration}
+            disabled={!safeDuration}
           />
           <View style={styles.timeRow}>
-            <Text style={styles.time}>{formatTime(position)}</Text>
-            <Text style={styles.time}>{formatTime(duration)}</Text>
+            <Text style={styles.time}>{formatTime(displayPosition)}</Text>
+            <Text style={styles.time}>{formatTime(safeDuration)}</Text>
           </View>
         </View>
 
@@ -245,26 +344,6 @@ const styles = StyleSheet.create({
     left: 20,
     zIndex: 1,
   },
-  deviceButton: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    zIndex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(29, 185, 84, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1DB954',
-  },
-  deviceButtonText: {
-    color: '#1DB954',
-    marginLeft: 8,
-    fontSize: 12,
-    fontWeight: '600',
-  },
   content: {
     flex: 1,
     justifyContent: 'center',
@@ -274,30 +353,40 @@ const styles = StyleSheet.create({
   albumArtContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
+    marginBottom: 30,
   },
   albumArt: {
-    width: width * 0.8,
-    height: width * 0.8,
-    borderRadius: 12,
-    marginBottom: 60,
+    width: width * 0.85,
+    height: width * 0.85,
+    borderRadius: 8,
   },
   loadingIndicator: {
     position: 'absolute',
   },
-  songDetails: {
+  songInfoSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 50,
+    width: '100%',
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  songDetails: {
+    flex: 1,
+    justifyContent: 'center',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    textAlign: 'center',
+    textAlign: 'left',
   },
   artist: {
-    fontSize: 18,
+    fontSize: 16,
     color: '#b3b3b3',
-    marginTop: 8,
+    marginTop: 4,
+    textAlign: 'left',
   },
   controlsContainer: {
     flexDirection: 'row',

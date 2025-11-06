@@ -155,7 +155,15 @@ export const toggleLikePlaylist = createAsyncThunk(
   async (playlistId, thunkAPI) => {
     try {
       const result = await apiService.toggleLikePlaylist(playlistId);
-      return { playlistId, liked: result.liked };
+      return {
+        playlistId,
+        liked: result.liked,
+        likeCount: typeof result.likeCount === 'number'
+          ? result.likeCount
+          : typeof result.like_count === 'number'
+            ? result.like_count
+            : null,
+      };
     } catch (error) {
       return thunkAPI.rejectWithValue('좋아요 처리에 실패했습니다.');
     }
@@ -487,37 +495,92 @@ const playlistSlice = createSlice({
         state.error = action.payload;
       })
       .addCase(toggleLikePlaylist.fulfilled, (state, action) => {
-        const { playlistId, liked } = action.payload;
-        // 현재 플레이리스트의 좋아요 상태 업데이트
-        if (state.currentPlaylist && state.currentPlaylist.id === playlistId) {
-          state.currentPlaylist.liked = liked;
+        const { playlistId, liked, likeCount } = action.payload || {};
+        if (!playlistId) {
+          return;
         }
-        // 사용자 플레이리스트 목록에서도 업데이트
-        const index = state.userPlaylists.findIndex(p => p.id === playlistId);
-        if (index !== -1) {
-          state.userPlaylists[index].liked = liked;
+        if (typeof liked !== 'boolean') {
+          return;
         }
-        // 좋아요한 플레이리스트 목록 업데이트
-        if (liked) {
-          const alreadyInList = state.likedPlaylists.some(p => p.id === playlistId);
-          if (!alreadyInList) {
-            const playlistFromUser = state.userPlaylists.find(p => p.id === playlistId);
-            const playlistSource =
-              playlistFromUser ||
-              (state.currentPlaylist && state.currentPlaylist.id === playlistId
-                ? state.currentPlaylist
-                : null);
-
-            if (playlistSource) {
-              const { songs, ...rest } = playlistSource;
-              state.likedPlaylists.unshift({ ...rest });
-            } else {
-              state.likedPlaylists.unshift({ id: playlistId, liked: true });
+        const likeDelta = liked ? 1 : -1;
+        const applyLikeToCollection = (collection) => {
+          if (!Array.isArray(collection)) return collection;
+          return collection.map((playlist) => {
+            if (!playlist || playlist.id !== playlistId) return playlist;
+            const next = { ...playlist, liked };
+            if (typeof likeCount === 'number') {
+              next.like_count = likeCount;
+            } else if (typeof next.like_count === 'number') {
+              const adjusted = Math.max(0, Number(next.like_count) + likeDelta);
+              next.like_count = adjusted;
             }
+            return next;
+          });
+        };
+
+        if (state.currentPlaylist && state.currentPlaylist.id === playlistId) {
+          state.currentPlaylist = {
+            ...state.currentPlaylist,
+            liked,
+          };
+          if (typeof likeCount === 'number') {
+            state.currentPlaylist.like_count = likeCount;
+          } else if (typeof state.currentPlaylist.like_count === 'number') {
+            state.currentPlaylist.like_count = Math.max(
+              0,
+              Number(state.currentPlaylist.like_count) + likeDelta
+            );
+          }
+        }
+
+        state.userPlaylists = applyLikeToCollection(state.userPlaylists);
+        state.recommendedPlaylists = applyLikeToCollection(state.recommendedPlaylists);
+        state.forYouPlaylists = applyLikeToCollection(state.forYouPlaylists);
+        state.popularPlaylists = applyLikeToCollection(state.popularPlaylists);
+
+        const ensureLikeMetadata = (playlist) => {
+          if (!playlist) return playlist;
+          const next = { ...playlist, liked: true };
+          if (typeof likeCount === 'number') {
+            next.like_count = likeCount;
+          }
+          return next;
+        };
+
+        if (liked) {
+          if (!Array.isArray(state.likedPlaylists)) {
+            state.likedPlaylists = [];
+          }
+          const existingIndex = state.likedPlaylists.findIndex((p) => p?.id === playlistId);
+          if (existingIndex >= 0) {
+            const updated = ensureLikeMetadata(state.likedPlaylists[existingIndex] || { id: playlistId });
+            state.likedPlaylists[existingIndex] = updated;
+          } else {
+            const sourceCollections = [
+              state.userPlaylists,
+              state.recommendedPlaylists,
+              state.forYouPlaylists,
+              state.popularPlaylists,
+            ];
+            let playlistSource = null;
+            for (const collection of sourceCollections) {
+              if (!Array.isArray(collection)) continue;
+              playlistSource = collection.find((p) => p?.id === playlistId);
+              if (playlistSource) break;
+            }
+            if (!playlistSource && state.currentPlaylist?.id === playlistId) {
+              playlistSource = state.currentPlaylist;
+            }
+            const normalized = ensureLikeMetadata(playlistSource || { id: playlistId });
+            const { songs, ...rest } = normalized || { id: playlistId };
+            state.likedPlaylists = [rest, ...state.likedPlaylists];
           }
         } else {
-          // 좋아요 제거
-          state.likedPlaylists = state.likedPlaylists.filter(p => p.id !== playlistId);
+          if (Array.isArray(state.likedPlaylists)) {
+            state.likedPlaylists = state.likedPlaylists.filter((p) => p?.id !== playlistId);
+          } else {
+            state.likedPlaylists = [];
+          }
         }
       })
       .addCase(toggleLikePlaylist.rejected, (state, action) => {

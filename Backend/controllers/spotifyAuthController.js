@@ -131,8 +131,17 @@ exports.exchangeCode = async (req, res) => {
     }
 
     if (refresh_token) {
-      await SpotifyTokenModel.upsertRefresh(userId, refresh_token, scope, { historyLimit: 5, maxPerHour: 12, clientId: client_id });
-      console.log('[exchangeCode] Refresh token stored successfully');
+      try {
+        await SpotifyTokenModel.upsertRefresh(userId, refresh_token, scope, { historyLimit: 5, maxPerHour: 20, clientId: client_id });
+        console.log('[exchangeCode] Refresh token stored successfully');
+      } catch (e) {
+        if (e.message?.includes('rotation rate exceeded')) {
+          console.warn('[exchangeCode] Rate limit exceeded, token will be stored on next refresh:', e.message);
+          // Rate limit 에러는 무시하고 계속 진행 (기존 토큰 유지)
+        } else {
+          throw e;
+        }
+      }
     } else {
       console.log('[exchangeCode] No new refresh_token from Spotify; keeping existing one.');
     }
@@ -218,7 +227,7 @@ exports.refreshToken = async (req, res) => {
       try {
         await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || record.scope, {
           historyLimit: 5,
-          maxPerHour: 12,
+          maxPerHour: 20,
           clientId: client_id || record.client_id || process.env.SPOTIFY_CLIENT_ID || null,
         });
         console.log('[refreshToken] Refresh token rotated successfully');
@@ -314,7 +323,7 @@ async function getAccessTokenForUser(userId) {
         const recNow = await SpotifyTokenModel.getByUser(userId);
         await SpotifyTokenModel.upsertRefresh(userId, newRefresh, scope || recNow?.scope, {
           historyLimit: 5,
-          maxPerHour: 12,
+          maxPerHour: 20,
           clientId: recNow?.client_id || process.env.SPOTIFY_CLIENT_ID || null,
         });
         console.log('[getAccessTokenForUser:spotifyAuthController] Refresh token rotated');
