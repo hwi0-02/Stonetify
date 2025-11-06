@@ -81,13 +81,48 @@ const pickHttpsEndpoint = (...candidates) => {
   return null;
 };
 
+const resolveHostUri = () => {
+  const expoConfig = Constants?.expoConfig || {};
+  const manifest = Constants?.manifest || {};
+  const manifest2 = Constants?.manifest2 || {};
+
+  return (
+    expoConfig.hostUri ||
+    expoConfig.debuggerHost ||
+    expoConfig?.extra?.expoGo?.hostUri ||
+    expoConfig?.extra?.expoGoConfig?.hostUri ||
+    manifest.hostUri ||
+    manifest.debuggerHost ||
+    manifest?.extra?.expoGo?.hostUri ||
+    manifest2?.extra?.expoGoConfig?.hostUri ||
+    ''
+  );
+};
+
+const isExpoTunnelHost = (uri) => {
+  if (typeof uri !== 'string') return false;
+  return /ngrok|tunnel|exp\.direct|expo\.dev/i.test(uri);
+};
+
+const isAndroidEmulatorHost = (uri) => {
+  if (typeof uri !== 'string') return false;
+  const normalized = uri.toLowerCase();
+  return (
+    normalized.includes('localhost') ||
+    normalized.includes('127.0.0.1') ||
+    normalized.startsWith('10.0.2.2') ||
+    normalized.startsWith('exp://127.') ||
+    normalized.startsWith('exp://localhost')
+  );
+};
+
 // ?�경�?API URL ?�정 (최적?�된 버전)
 const getApiUrl = () => {
   if (__DEV__) {
     if (Platform.OS === 'web') {
       const currentUrl = typeof window !== 'undefined' && window.location ? window.location.href : '';
       const isSecureContext = currentUrl.startsWith('https://');
-      const isTunnelHost = currentUrl.includes('ngrok') || currentUrl.includes('exp.direct') || currentUrl.includes('expo.dev');
+      const isTunnelHost = isExpoTunnelHost(currentUrl);
       
       // HTTPS ?�널 모드 감�? �??�록???�버 ?�용
       if (isTunnelHost) {
@@ -109,15 +144,15 @@ const getApiUrl = () => {
     }
     
     // 모바?�에???�널 모드 감�?
-    const hostUri = Constants.expoConfig?.hostUri;
+    const hostUri = resolveHostUri();
     
-    if (hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'))) {
+    if (isExpoTunnelHost(hostUri)) {
       // 모바???�널 모드?�서??IP 주소 ?�용
       return CONFIG.TUNNEL_API_URL;
     }
     
     // 안드로이드 에뮬레이터는 10.0.2.2를 통해 호스트(PC)의 localhost에 접근합니다.
-    if (Platform.OS === 'android') {
+    if (Platform.OS === 'android' && isAndroidEmulatorHost(hostUri)) {
       return `http://10.0.2.2:${CONFIG.BACKEND_PORT}/api/`;
     }
 
@@ -136,11 +171,11 @@ const API_URL = getApiUrl();
 const isTunnelMode = () => {
   if (Platform.OS === 'web') {
     const currentUrl = typeof window !== 'undefined' ? window.location.href : '';
-    return currentUrl.includes('https://') && (currentUrl.includes('exp.direct') || currentUrl.includes('ngrok'));
+    return currentUrl.startsWith('https://') && isExpoTunnelHost(currentUrl);
   }
   
-  const hostUri = Constants.expoConfig?.hostUri;
-  return hostUri && (hostUri.includes('ngrok') || hostUri.includes('tunnel') || hostUri.includes('exp.direct'));
+  const hostUri = resolveHostUri();
+  return isExpoTunnelHost(hostUri);
 };
 
 // Axios 인스턴스 생성 (최적화된 설정)
