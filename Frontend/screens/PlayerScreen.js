@@ -131,7 +131,7 @@ const PlayerScreen = ({ navigation }) => {
 
     if (pendingTarget !== null) {
       const diff = Math.abs(normalized - pendingTarget);
-      if (diff <= 750) {
+      if (diff <= 1000) {
         requestedSeekRef.current = null;
         setPendingSeekValue(null);
         setDisplayPosition(normalized);
@@ -139,10 +139,24 @@ const PlayerScreen = ({ navigation }) => {
       return;
     }
 
+    // 서버 position과 로컬 position 동기화
     setDisplayPosition((prev) => {
-      if (Math.abs(prev - normalized) > 750) {
+      const diff = Math.abs(prev - normalized);
+
+      // 차이가 3초 이상이면 즉시 동기화
+      if (diff > 3000) {
+        console.log('[PlayerScreen] Large desync detected, syncing:', { prev, normalized, diff });
         return normalized;
       }
+
+      // 차이가 1초 이상이면 서버 position으로 부드럽게 수렴
+      if (diff > 1000) {
+        // 서버 position 방향으로 조금씩 이동
+        const correction = (normalized - prev) * 0.3;
+        return prev + correction;
+      }
+
+      // 차이가 작으면 그대로 유지 (로컬 틱이 계속 증가시킴)
       return prev;
     });
   }, [safePosition, seekInProgress, clampToDuration]);
@@ -158,9 +172,11 @@ const PlayerScreen = ({ navigation }) => {
   }, [currentTrack?.id, clampToDuration, safePosition]);
 
   useEffect(() => {
-    if (!isPlaying || seekInProgress || safeDuration <= 0) {
+    if (!isPlaying || seekInProgress) {
       return;
     }
+
+    console.log('[PlayerScreen] Starting local playback timer, duration:', safeDuration);
 
     // Locally tick the progress bar between backend status snapshots.
     let lastTick = Date.now();
@@ -168,14 +184,34 @@ const PlayerScreen = ({ navigation }) => {
       const now = Date.now();
       const delta = now - lastTick;
       lastTick = now;
+
       setDisplayPosition((prev) => {
-        const baseline = Math.max(prev, safePosition);
-        return clampToDuration(baseline + delta);
+        // 단순히 이전 값에서 delta만큼 증가
+        const next = prev + delta;
+
+        // duration 체크를 여기서 직접 수행
+        if (safeDuration > 0 && next > safeDuration) {
+          return safeDuration;
+        }
+
+        if (next < 0) {
+          return 0;
+        }
+
+        // 디버깅: 재생바가 멈췄는지 확인
+        if (__DEV__ && delta > 0 && Math.abs(next - prev) < 10) {
+          console.warn('[PlayerScreen] Display position not updating!', { prev, next, delta, safeDuration });
+        }
+
+        return next;
       });
     }, 200);
 
-    return () => clearInterval(intervalId);
-  }, [isPlaying, seekInProgress, safeDuration, safePosition, clampToDuration]);
+    return () => {
+      console.log('[PlayerScreen] Stopping local playback timer');
+      clearInterval(intervalId);
+    };
+  }, [isPlaying, seekInProgress, safeDuration]);
 
   const onSlidingStart = () => {
     const normalized = clampToDuration(displayPosition);
@@ -205,8 +241,22 @@ const PlayerScreen = ({ navigation }) => {
     setDisplayPosition(normalized);
   };
 
+  // 재생 상태 변화 추적
+  useEffect(() => {
+    if (__DEV__) {
+      console.log('[PlayerScreen] State changed:', {
+        isPlaying,
+        seekInProgress,
+        position,
+        displayPosition,
+        duration,
+        currentTrackId: currentTrack?.id
+      });
+    }
+  }, [isPlaying, seekInProgress, position, displayPosition, duration, currentTrack?.id]);
+
   if (__DEV__) {
-    console.log('[PlayerScreen]', { position, duration, repeatMode, isShuffle, seekInProgress });
+    console.log('[PlayerScreen] Render:', { position, duration, isPlaying, seekInProgress });
   }
 
   if (!currentTrack) {

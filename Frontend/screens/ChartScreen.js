@@ -6,20 +6,55 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { fetchPopularPlaylists } from '../store/slices/playlistSlice';
-import SongListItem from '../components/SongListItem'; 
+import { fetchPopularPlaylists, hydratePopularFromCache, POPULAR_CHART_CACHE_TTL_MS } from '../store/slices/playlistSlice';
 
 const placeholderAlbum = require('../assets/images/placeholder_album.png');
 
 const ChartScreen = () => {
   const navigation = useNavigation();
   const dispatch = useDispatch();
-  const { popularPlaylists, status } = useSelector((state) => state.playlist);
+  const {
+    popularPlaylists,
+    popularStatus,
+    popularPlaylistsCache,
+    popularPeriod,
+  } = useSelector((state) => state.playlist);
   const [period, setPeriod] = useState('weekly'); // 'daily' | 'weekly'
+  const [isChangingPeriod, setIsChangingPeriod] = useState(false);
+  const chartLimit = 50;
 
   useEffect(() => {
-    dispatch(fetchPopularPlaylists({ period, limit: 50 }));
-  }, [dispatch, period]);
+    let isCancelled = false;
+    const cacheEntry = popularPlaylistsCache?.[period];
+    if (cacheEntry?.data?.length) {
+      dispatch(hydratePopularFromCache({ period }));
+      const limitSatisfied = (cacheEntry.limit ?? cacheEntry.data.length) >= chartLimit;
+      const now = Date.now();
+      const isFresh = typeof cacheEntry.expiresAt === 'number'
+        ? cacheEntry.expiresAt > now
+        : typeof cacheEntry.cachedAt === 'number'
+          ? now - cacheEntry.cachedAt < POPULAR_CHART_CACHE_TTL_MS
+          : false;
+      if (limitSatisfied && isFresh) {
+        setIsChangingPeriod(false);
+        return () => {
+          isCancelled = true;
+        };
+      }
+    }
+
+    setIsChangingPeriod(true);
+    dispatch(fetchPopularPlaylists({ period, limit: chartLimit }))
+      .finally(() => {
+        if (!isCancelled) {
+          setIsChangingPeriod(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [dispatch, period, popularPlaylistsCache]);
 
   const handlePlaylistPress = (playlistId) => {
     navigation.navigate('PlaylistDetail', { playlistId });
@@ -75,10 +110,11 @@ const ChartScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {status === 'loading' && popularPlaylists.length === 0 ? (
+      {(popularStatus === 'loading' && popularPeriod === period) || isChangingPeriod ? (
         <ActivityIndicator style={{ marginTop: 50 }} size="large" color="#fff" />
       ) : (
         <FlatList
+          key={period}
           data={popularPlaylists}
           renderItem={renderItem}
           keyExtractor={keyExtractor}

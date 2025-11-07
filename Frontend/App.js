@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Provider } from 'react-redux';
 import { store } from './store/store';
 import AppNavigator from './navigation/AppNavigator';
@@ -8,9 +8,9 @@ import { ActivityIndicator, View, StyleSheet, AppState, Linking, Platform } from
 import { Ionicons } from '@expo/vector-icons';
 import { restorePlaybackState } from './store/slices/playerSlice';
 import { useSelector, useDispatch } from 'react-redux';
-import { refreshSpotifyToken, getPremiumStatus, fetchSpotifyProfile } from './store/slices/spotifySlice';
+import { refreshSpotifyToken, getPremiumStatus, fetchSpotifyProfile, hydrateSpotifySession } from './store/slices/spotifySlice';
 import { ensureSpotifyAdapter, suspendAdapterPolling, resumeAdapterPolling } from './adapters';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 // Use sentry-expo wrapper (managed workflow friendly)
 let Sentry;
 try {
@@ -46,6 +46,11 @@ function CoreApp() {
   const dispatch = useDispatch();
   const { accessToken, tokenExpiry } = useSelector(state => state.spotify);
   const { user } = useSelector(state => state.auth);
+  const lastRestoredUserRef = useRef();
+
+  useEffect(() => {
+    dispatch(hydrateSpotifySession());
+  }, [dispatch]);
 
   // Initialize Spotify adapter when user is available
   useEffect(() => {
@@ -94,6 +99,15 @@ function CoreApp() {
     }
   }, [accessToken, dispatch]);
 
+  useEffect(() => {
+    const resolvedUserId = user?.id || user?.userId || null;
+    if (lastRestoredUserRef.current === resolvedUserId) {
+      return;
+    }
+    lastRestoredUserRef.current = resolvedUserId;
+    dispatch(restorePlaybackState({ userId: resolvedUserId }));
+  }, [dispatch, user?.id, user?.userId]);
+
   // Suspend polling when app is backgrounded; resume on active
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
@@ -138,14 +152,6 @@ export default function App() {
   useEffect(() => {
     loadAssetsAsync();
   }, []);
-
-  // Assets 로딩 완료 후 마지막 재생 상태 복원
-  useEffect(() => {
-    if (assetsLoaded) {
-      // store 직접 사용 (Provider 외부 dispatch 필요 없음)
-      store.dispatch(restorePlaybackState());
-    }
-  }, [assetsLoaded]);
 
   // 폰트 로딩 중일 때 로딩 화면 표시
   if (!assetsLoaded) {

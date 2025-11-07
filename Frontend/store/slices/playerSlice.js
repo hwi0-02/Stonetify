@@ -4,7 +4,7 @@ import { showToast } from '../../utils/toast';
 import { track as analyticsTrack } from '../../utils/analytics';
 import { startPlaybackHistory, completePlaybackHistory, getRemoteDevices, transferRemotePlayback } from '../../services/apiService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearSpotifySession, refreshSpotifyToken } from './spotifySlice';
+import { clearSpotifySessionWithStorage, refreshSpotifyToken } from './spotifySlice';
 
 let lastStatusUpdate = 0;
 
@@ -262,8 +262,7 @@ export const playTrack = createAsyncThunk(
         console.error('🔴 [playTrack] Spotify token revoked');
         analyticsTrack('spotify_token_revoked', { trackId: track?.id });
 
-        const { clearSpotifySession } = await import('./spotifySlice');
-        dispatch(clearSpotifySession({ reason: 'revoked' }));
+        await dispatch(clearSpotifySessionWithStorage({ reason: 'revoked' }));
         try {
           await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
         } catch (storageError) {
@@ -496,14 +495,21 @@ export const toggleShuffleMode = createAsyncThunk(
   }
 );
 
-const STORAGE_KEY = '@stonetify_playback_state_v1';
+const LEGACY_STORAGE_KEY = '@stonetify_playback_state_v1';
+const PLAYBACK_STORAGE_VERSION = 'v2';
+const buildPlaybackStorageKey = (userId) => `@stonetify_playback_state_${PLAYBACK_STORAGE_VERSION}:${userId || 'anon'}`;
+const selectAuthUserId = (state) => state?.auth?.user?.id || state?.auth?.user?.userId || null;
 
 export const persistPlaybackState = createAsyncThunk(
   'player/persistPlaybackState',
   async (_, { getState }) => {
     try {
-      const { player } = getState();
+      const state = getState();
+      const { player } = state;
+      const userId = selectAuthUserId(state);
+      const storageKey = buildPlaybackStorageKey(userId);
       const snapshot = {
+        userId,
         queue: player.queue.map(t => ({
           id: t.id,
           name: t.name,
@@ -517,7 +523,8 @@ export const persistPlaybackState = createAsyncThunk(
         isShuffle: player.isShuffle,
         timestamp: Date.now(),
       };
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+      await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+      await AsyncStorage.setItem(storageKey, JSON.stringify(snapshot));
     } catch (e) {
       console.warn('Persist playback failed', e);
     }
@@ -526,12 +533,24 @@ export const persistPlaybackState = createAsyncThunk(
 
 export const restorePlaybackState = createAsyncThunk(
   'player/restorePlaybackState',
-  async (_, { dispatch }) => {
+  async ({ userId: explicitUserId } = {}, { dispatch, getState }) => {
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
+      await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
+      const state = getState();
+      const resolvedUserId = typeof explicitUserId === 'string' || explicitUserId === null
+        ? explicitUserId
+        : selectAuthUserId(state);
+      const storageKey = buildPlaybackStorageKey(resolvedUserId);
+      const raw = await AsyncStorage.getItem(storageKey);
+      if (!raw) {
+        dispatch(playerSlice.actions.resetPlayerState());
+        return;
+      }
       const data = JSON.parse(raw);
-      if (!Array.isArray(data.queue) || data.queue.length === 0) return;
+      if (!Array.isArray(data.queue) || data.queue.length === 0) {
+        dispatch(playerSlice.actions.resetPlayerState());
+        return;
+      }
       dispatch(playerSlice.actions.restoreState({
         queue: data.queue,
         queueIndex: data.queueIndex || 0,
@@ -541,6 +560,7 @@ export const restorePlaybackState = createAsyncThunk(
       }));
     } catch (e) {
       console.warn('Restore playback failed', e);
+      dispatch(playerSlice.actions.resetPlayerState());
     }
   }
 );
@@ -549,6 +569,7 @@ const playerSlice = createSlice({
   name: 'player',
   initialState,
   reducers: {
+    resetPlayerState: () => ({ ...initialState }),
     setLoading: (state) => {
       state.status = 'loading';
     },
@@ -622,6 +643,12 @@ const playerSlice = createSlice({
         state.status = 'playing';
         state.isPlaying = true;
         state.error = null;
+        // Set duration immediately from track data
+        if (action.payload?.duration_ms) {
+          state.duration = action.payload.duration_ms;
+        } else if (action.payload?.duration) {
+          state.duration = action.payload.duration;
+        }
       })
       .addCase(playTrack.rejected, (state, action) => {
         state.status = 'error';
@@ -680,6 +707,7 @@ const playerSlice = createSlice({
 });
 
 export const {
+  resetPlayerState,
   setLoading,
   setPlaying,
   setPaused,

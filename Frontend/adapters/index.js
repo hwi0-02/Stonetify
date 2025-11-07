@@ -47,22 +47,94 @@ class RestRemoteAdapter {
   }
   async load(track, autoPlay = true, options = {}) {
     this.currentTrack = track;
-    const deviceId = options?.deviceId || null;
+    let deviceId = options?.deviceId || null;
+
     // Extract Spotify ID (prioritize spotify_id over id to avoid Firebase IDs)
     const spotifyId = track.spotify_id || track.spotifyId || (track.id && !track.id.startsWith('-') ? track.id : null);
     const uris = track.uri ? [track.uri] : (spotifyId ? [`spotify:track:${spotifyId}`] : []);
-    
+
     if (!uris.length) {
       console.error('❌ [RestRemoteAdapter] Track missing valid Spotify URI/ID:', track);
       throw new Error('Track missing valid Spotify URI/ID');
     }
-    
+
     // Validate URI format before sending
     if (uris[0].includes('-O_') || uris[0].startsWith('spotify:track:-')) {
       console.error('❌ [RestRemoteAdapter] Invalid Firebase ID detected in URI:', uris[0]);
       throw new Error(`Invalid track ID format detected: ${uris[0]}`);
     }
-    
+
+    // 디바이스가 지정되지 않은 경우, 자동으로 최적의 디바이스 선택
+    if (!deviceId) {
+      try {
+        console.log('🔍 [RestRemoteAdapter] Fetching available devices...');
+        const devicesData = await apiService.getRemoteDevices(this.userId);
+        const devices = devicesData?.devices || [];
+
+        if (devices.length > 0) {
+          // 우선순위: 1. 활성 모바일 2. 모바일 3. 활성 디바이스 4. 첫 번째 디바이스
+          let selectedDevice = null;
+
+          // 1. 활성 상태의 모바일 디바이스 찾기
+          selectedDevice = devices.find(d => d.is_active && d.type === 'Smartphone');
+
+          // 2. 활성이 아니더라도 모바일 디바이스 찾기
+          if (!selectedDevice) {
+            selectedDevice = devices.find(d => d.type === 'Smartphone');
+          }
+
+          // 3. 현재 활성 디바이스 사용
+          if (!selectedDevice) {
+            selectedDevice = devices.find(d => d.is_active);
+          }
+
+          // 4. 첫 번째 사용 가능한 디바이스
+          if (!selectedDevice) {
+            selectedDevice = devices[0];
+          }
+
+          if (selectedDevice) {
+            deviceId = selectedDevice.id;
+            console.log('✅ [RestRemoteAdapter] Auto-selected device:', {
+              name: selectedDevice.name,
+              type: selectedDevice.type,
+              isActive: selectedDevice.is_active,
+              id: selectedDevice.id
+            });
+
+            // 선택된 디바이스가 활성이 아니면 강제로 전환
+            if (!selectedDevice.is_active) {
+              console.log('🔄 [RestRemoteAdapter] Forcefully transferring playback to selected device...');
+              try {
+                // play: true로 강제 활성화
+                await apiService.transferRemotePlayback({
+                  userId: this.userId,
+                  device_id: deviceId,
+                  play: true // 강제로 활성화
+                });
+                console.log('✅ [RestRemoteAdapter] Forcefully activated device');
+                // 디바이스 전환 후 잠시 대기
+                await new Promise(resolve => setTimeout(resolve, 800));
+                // 일시정지하여 디바이스는 활성 상태 유지
+                try {
+                  await apiService.pauseRemote(this.userId);
+                  console.log('✅ [RestRemoteAdapter] Paused to keep device active');
+                } catch (pauseError) {
+                  console.warn('⚠️ [RestRemoteAdapter] Pause failed (non-fatal):', pauseError.message);
+                }
+              } catch (transferError) {
+                console.warn('⚠️ [RestRemoteAdapter] Device transfer failed, will try direct play:', transferError.message);
+              }
+            } else {
+              console.log('✅ [RestRemoteAdapter] Device already active');
+            }
+          }
+        }
+      } catch (devicesError) {
+        console.warn('⚠️ [RestRemoteAdapter] Failed to fetch devices, will try without device_id:', devicesError.message);
+      }
+    }
+
     const executeLoad = async () => {
       await apiService.playRemote({ userId: this.userId, uris, device_id: deviceId });
       if (!autoPlay) await apiService.pauseRemote(this.userId);
@@ -95,8 +167,10 @@ class RestRemoteAdapter {
       // Handle NO_ACTIVE_DEVICE error specifically
       if (error.response?.data?.error === 'NO_ACTIVE_DEVICE') {
         const userFriendlyError = new Error(
-          error.response?.data?.message ||
-          'Spotify 재생 장치를 찾을 수 없습니다.\n휴대폰, 컴퓨터 또는 스피커에서 Spotify 앱을 먼저 열어주세요.'
+          'Spotify 재생 장치를 찾을 수 없습니다.\n\n' +
+          '1. 모바일에서 Spotify 앱을 열어주세요\n' +
+          '2. 아무 곡이나 재생한 후 정지해주세요\n' +
+          '3. 다시 Stonetify에서 재생해보세요'
         );
         userFriendlyError.code = 'NO_ACTIVE_DEVICE';
         throw userFriendlyError;
@@ -229,7 +303,7 @@ class RestRemoteAdapter {
         // silent; other polling errors not fatal
         console.warn('⚠️ [RestRemoteAdapter] Polling error (non-fatal):', e.message);
       }
-    }, 2500); // remote polling every 2.5s (lighter than preview 250ms push)
+    }, 1000); // remote polling every 1s for smoother progress bar
   }
   _stopPolling() { if (this.pollInterval) { clearInterval(this.pollInterval); this.pollInterval = null; } }
   suspendPolling() { this._suspended = true; }

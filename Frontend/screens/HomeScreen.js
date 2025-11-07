@@ -30,6 +30,8 @@ import {
   hydrateGeminiRecommendations,
   sendRecommendationFeedback,
   fetchPopularPlaylists,
+  hydratePopularFromCache,
+  POPULAR_CHART_CACHE_TTL_MS,
 } from '../store/slices/playlistSlice';
 import PostCard from '../components/PostCard';
 import HorizontalPlaylist from '../components/HorizontalPlaylist';
@@ -42,6 +44,7 @@ const { width: screenWidth } = Dimensions.get('window');
 const isWeb = Platform.OS === 'web';
 const isMobile = !isWeb && screenWidth < 768;
 const AI_CACHE_TTL_MS = 5 * 60 * 1000; // 5분 캐시 유지
+const HOME_POPULAR_LIMIT = 20;
 
 const HomeScreen = ({ navigation }) => {
   const dispatch = useDispatch();
@@ -68,6 +71,15 @@ const HomeScreen = ({ navigation }) => {
       prev.forYouPlaylists === next.forYouPlaylists &&
       prev.popularPlaylists === next.popularPlaylists &&
       prev.aiRecommendations === next.aiRecommendations
+  );
+  const { popularPlaylistsCache, popularPeriod } = useSelector(
+    (state) => ({
+      popularPlaylistsCache: state.playlist.popularPlaylistsCache,
+      popularPeriod: state.playlist.popularPeriod,
+    }),
+    (prev, next) =>
+      prev.popularPlaylistsCache === next.popularPlaylistsCache &&
+      prev.popularPeriod === next.popularPeriod
   );
   const [refreshing, setRefreshing] = useState(false);
   const [chartPeriod, setChartPeriod] = useState('weekly');
@@ -115,8 +127,24 @@ const HomeScreen = ({ navigation }) => {
   }, [posts]);
 
   useEffect(() => {
-    dispatch(fetchPopularPlaylists({ period: chartPeriod, limit: 3 }));
-  }, [dispatch, chartPeriod]);
+    const cacheEntry = popularPlaylistsCache?.[chartPeriod];
+    if (cacheEntry?.data?.length) {
+      if (popularPeriod !== chartPeriod) {
+        dispatch(hydratePopularFromCache({ period: chartPeriod }));
+      }
+      const limitSatisfied = (cacheEntry.limit ?? cacheEntry.data.length) >= HOME_POPULAR_LIMIT;
+      const now = Date.now();
+      const isFresh = typeof cacheEntry.expiresAt === 'number'
+        ? cacheEntry.expiresAt > now
+        : typeof cacheEntry.cachedAt === 'number'
+          ? now - cacheEntry.cachedAt < POPULAR_CHART_CACHE_TTL_MS
+          : false;
+      if (limitSatisfied && isFresh) {
+        return;
+      }
+    }
+    dispatch(fetchPopularPlaylists({ period: chartPeriod, limit: HOME_POPULAR_LIMIT }));
+  }, [dispatch, chartPeriod, popularPlaylistsCache, popularPeriod]);
 
   useEffect(() => {
     let isActive = true;
@@ -146,7 +174,7 @@ const HomeScreen = ({ navigation }) => {
       dispatch(fetchLikedPlaylists()),
       dispatch(fetchRecommendedPlaylists()),
       dispatch(fetchForYouPlaylists()),
-      dispatch(fetchPopularPlaylists({ period: chartPeriod, limit: 3 })),
+      dispatch(fetchPopularPlaylists({ period: chartPeriod, limit: HOME_POPULAR_LIMIT })),
     ])
       .catch(err => console.error('홈 화면 데이터 새로고침 실패:', err))
       .finally(() => setRefreshing(false));

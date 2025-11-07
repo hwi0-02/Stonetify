@@ -88,31 +88,41 @@ class Playlist {
   }
 
   static async findPopular(period = 'weekly', limit = 50) {
-    const allPlaylists = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.PLAYLISTS);
-    const allLikes = await RealtimeDBHelpers.getAllDocuments(COLLECTIONS.LIKED_PLAYLISTS);
+    // 병렬로 데이터 가져오기
+    const [allPlaylists, allLikes] = await Promise.all([
+      RealtimeDBHelpers.getAllDocuments(COLLECTIONS.PLAYLISTS),
+      RealtimeDBHelpers.getAllDocuments(COLLECTIONS.LIKED_PLAYLISTS)
+    ]);
 
     const now = Date.now();
     const periodMs = period === 'daily' ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
     const startTime = now - periodMs;
 
-    const likeCounts = allLikes
-      .filter(like => like.liked_at >= startTime)
-      .reduce((acc, like) => {
-        acc[like.playlist_id] = (acc[like.playlist_id] || 0) + 1;
-        return acc;
-      }, {});
+    // 좋아요 수 집계 (기간 필터링)
+    const likeCounts = {};
+    for (const like of allLikes) {
+      if (like.liked_at >= startTime) {
+        likeCounts[like.playlist_id] = (likeCounts[like.playlist_id] || 0) + 1;
+      }
+    }
 
-    const popularPlaylists = allPlaylists
-      .filter(p => p.is_public)
-      .map(p => ({
-        ...p,
-        like_count: likeCounts[p.id] || 0
-      }))
-      .filter(p => p.like_count > 0)
-      .sort((a, b) => b.like_count - a.like_count)
-      .slice(0, limit);
+    // 공개 플레이리스트 필터링 및 정렬
+    const popularPlaylists = [];
+    for (const p of allPlaylists) {
+      if (p.is_public) {
+        const likeCount = likeCounts[p.id] || 0;
+        if (likeCount > 0) {
+          popularPlaylists.push({
+            ...p,
+            like_count: likeCount
+          });
+        }
+      }
+    }
 
-    return popularPlaylists;
+    // 좋아요 수로 정렬하고 limit만큼 반환
+    popularPlaylists.sort((a, b) => b.like_count - a.like_count);
+    return popularPlaylists.slice(0, limit);
   }
 }
 

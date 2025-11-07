@@ -471,9 +471,36 @@ const getPopularPlaylists = asyncHandler(async (req, res) => {
     try {
         const playlists = await Playlist.findPopular(period, limit);
 
-        const playlistsWithCovers = await Promise.all(playlists.map(async (playlist) => {
-            const songs = await Song.findByPlaylistId(playlist.id);
-            const user = await User.findById(playlist.user_id);
+        if (!playlists || playlists.length === 0) {
+            return res.status(200).json([]);
+        }
+
+        // 모든 플레이리스트 ID에 대한 노래와 유저를 한 번에 가져오기
+        const playlistIds = playlists.map(p => p.id);
+        const userIds = [...new Set(playlists.map(p => p.user_id))];
+
+        // 병렬로 모든 데이터 가져오기
+        const [allSongs, allUsers] = await Promise.all([
+            Promise.all(playlistIds.map(id => Song.findByPlaylistId(id))),
+            Promise.all(userIds.map(id => User.findById(id)))
+        ]);
+
+        // 유저 맵 생성
+        const userMap = {};
+        allUsers.forEach(user => {
+            if (user) userMap[user.id] = user;
+        });
+
+        // 노래 맵 생성 (playlistId -> songs)
+        const songMap = {};
+        playlistIds.forEach((id, index) => {
+            songMap[id] = allSongs[index] || [];
+        });
+
+        // 결과 조합
+        const playlistsWithCovers = playlists.map(playlist => {
+            const songs = songMap[playlist.id] || [];
+            const user = userMap[playlist.user_id];
 
             const coverImages = songs
                 .slice(0, 4)
@@ -485,7 +512,7 @@ const getPopularPlaylists = asyncHandler(async (req, res) => {
                 cover_images: coverImages,
                 user: user ? { id: user.id, display_name: user.display_name } : null,
             };
-        }));
+        });
 
         res.status(200).json(playlistsWithCovers);
     } catch (error) {

@@ -5,6 +5,20 @@ const SpotifyTokenModel = require('../models/spotify_token');
 
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
 const SPOTIFY_API_BASE_URL = 'https://api.spotify.com/v1';
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const parseRetryAfterHeader = (headerValue) => {
+  if (!headerValue) return null;
+  const numeric = Number(headerValue);
+  if (Number.isFinite(numeric)) {
+    return numeric * 1000;
+  }
+  const dateValue = Date.parse(headerValue);
+  if (!Number.isNaN(dateValue)) {
+    const diff = dateValue - Date.now();
+    return diff > 0 ? diff : null;
+  }
+  return null;
+};
 
 // PKCE 토큰 요청 준비
 function prepareTokenRequest(params, clientIdOverride) {
@@ -84,30 +98,60 @@ exports.exchangeCode = async (req, res) => {
     const { headers } = prepareTokenRequest(params, finalClientId);
 
     console.log('[exchangeCode] Requesting token from Spotify with redirect_uri:', redirect_uri);
+    const MAX_ATTEMPTS = 3;
+    let attempt = 0;
     let tokenResp;
-    try {
-      tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
-    } catch (axiosError) {
-      // Spotify API 오류 처리
-      const errorData = axiosError.response?.data;
-      console.error('[exchangeCode] Spotify API error:', errorData);
+    while (attempt < MAX_ATTEMPTS) {
+      attempt += 1;
+      try {
+        tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+        break;
+      } catch (axiosError) {
+        const status = axiosError.response?.status;
+        const errorData = axiosError.response?.data;
+        console.error('[exchangeCode] Spotify API error:', errorData);
 
-      if (errorData?.error === 'invalid_grant') {
-        return res.status(400).json({
-          message: 'Spotify 인증 코드가 만료되었거나 올바르지 않습니다. 다시 로그인해주세요.',
-          error: 'INVALID_GRANT'
-        });
+        if (status === 429) {
+          const retryAfterMs =
+            parseRetryAfterHeader(axiosError.response?.headers?.['retry-after']) ||
+            Math.min(15000, 2000 * attempt);
+          if (attempt < MAX_ATTEMPTS) {
+            console.warn(`[exchangeCode] Spotify rate limit hit (attempt ${attempt}/${MAX_ATTEMPTS}). Retrying in ${retryAfterMs}ms.`);
+            await wait(retryAfterMs);
+            continue;
+          }
+          console.error('[exchangeCode] Spotify rate limit reached after retries.');
+          return res.status(429).json({
+            message: 'Spotify 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+            error: 'SPOTIFY_RATE_LIMIT',
+            retryAfterMs,
+          });
+        }
+
+        if (errorData?.error === 'invalid_grant') {
+          return res.status(400).json({
+            message: 'Spotify 인증 코드가 만료되었거나 올바르지 않습니다. 다시 로그인해주세요.',
+            error: 'INVALID_GRANT'
+          });
+        }
+
+        if (errorData?.error === 'redirect_uri_mismatch') {
+          return res.status(400).json({
+            message: 'Spotify Redirect URI가 일치하지 않습니다. Spotify Dashboard 설정을 확인해주세요.',
+            error: 'REDIRECT_URI_MISMATCH',
+            details: process.env.NODE_ENV === 'development' ? { redirect_uri } : undefined
+          });
+        }
+
+        throw axiosError;
       }
+    }
 
-      if (errorData?.error === 'redirect_uri_mismatch') {
-        return res.status(400).json({
-          message: 'Spotify Redirect URI가 일치하지 않습니다. Spotify Dashboard 설정을 확인해주세요.',
-          error: 'REDIRECT_URI_MISMATCH',
-          details: process.env.NODE_ENV === 'development' ? { redirect_uri } : undefined
-        });
-      }
-
-      throw axiosError;
+    if (!tokenResp) {
+      return res.status(429).json({
+        message: 'Spotify 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+        error: 'SPOTIFY_RATE_LIMIT',
+      });
     }
 
     const { access_token, refresh_token, expires_in, scope, token_type } = tokenResp.data;
@@ -139,7 +183,11 @@ exports.exchangeCode = async (req, res) => {
           console.warn('[exchangeCode] Rate limit exceeded, token will be stored on next refresh:', e.message);
           // Rate limit 에러는 무시하고 계속 진행 (기존 토큰 유지)
         } else {
-          throw e;
+          console.error('[exchangeCode] Failed to store refresh token:', e.message);
+          return res.status(500).json({
+            message: 'Spotify 토큰 저장에 실패했습니다.',
+            error: 'TOKEN_STORAGE_FAILED'
+          });
         }
       }
     } else {
@@ -147,6 +195,14 @@ exports.exchangeCode = async (req, res) => {
     }
 
     const stored = await SpotifyTokenModel.getByUser(userId);
+
+    if (!stored || !stored.refresh_token_enc) {
+      console.error('[exchangeCode] Failed to retrieve stored token after save for userId:', userId);
+      return res.status(500).json({
+        message: 'Spotify 토큰 저장 후 조회에 실패했습니다. 다시 시도해주세요.',
+        error: 'TOKEN_RETRIEVAL_FAILED'
+      });
+    }
 
     console.log('[exchangeCode] Token exchange successful for userId:', userId);
     return res.json({
@@ -210,7 +266,43 @@ exports.refreshToken = async (req, res) => {
     const { headers } = prepareTokenRequest(params, client_id);
 
     console.log('[refreshToken] Requesting new access token from Spotify...');
-    const tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+    const MAX_ATTEMPTS = 3;
+    let attempt = 0;
+    let tokenResp;
+    while (attempt < MAX_ATTEMPTS) {
+      attempt += 1;
+      try {
+        tokenResp = await axios.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+        break;
+      } catch (axiosError) {
+        const status = axiosError.response?.status;
+        if (status === 429) {
+          const retryAfterMs =
+            parseRetryAfterHeader(axiosError.response?.headers?.['retry-after']) ||
+            Math.min(15000, 2000 * attempt);
+          if (attempt < MAX_ATTEMPTS) {
+            console.warn(`[refreshToken] Spotify rate limit hit (attempt ${attempt}/${MAX_ATTEMPTS}). Retrying in ${retryAfterMs}ms.`);
+            await wait(retryAfterMs);
+            continue;
+          }
+          console.error('[refreshToken] Spotify rate limit reached after retries.');
+          return res.status(429).json({
+            message: 'Spotify 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+            error: 'SPOTIFY_RATE_LIMIT',
+            retryAfterMs,
+          });
+        }
+        throw axiosError;
+      }
+    }
+
+    if (!tokenResp) {
+      return res.status(429).json({
+        message: 'Spotify 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+        error: 'SPOTIFY_RATE_LIMIT',
+      });
+    }
+
     const { access_token, expires_in, scope, token_type, refresh_token: newRefresh } = tokenResp.data;
 
     if (!access_token) {
@@ -309,7 +401,39 @@ async function getAccessTokenForUser(userId) {
 
   try {
     console.log('[getAccessTokenForUser:spotifyAuthController] Requesting token from Spotify...');
-    const tokenResp = await axiosRef.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+    const MAX_ATTEMPTS = 3;
+    let attempt = 0;
+    let tokenResp;
+    while (attempt < MAX_ATTEMPTS) {
+      attempt += 1;
+      try {
+        tokenResp = await axiosRef.post(SPOTIFY_TOKEN_URL, params.toString(), { headers });
+        break;
+      } catch (axiosError) {
+        const status = axiosError.response?.status;
+        if (status === 429) {
+          const retryAfterMs =
+            parseRetryAfterHeader(axiosError.response?.headers?.['retry-after']) ||
+            Math.min(15000, 2000 * attempt);
+          if (attempt < MAX_ATTEMPTS) {
+            console.warn(`[getAccessTokenForUser] Spotify rate limit hit (attempt ${attempt}/${MAX_ATTEMPTS}). Retrying in ${retryAfterMs}ms.`);
+            await wait(retryAfterMs);
+            continue;
+          }
+          const rateLimitError = new Error('Spotify 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');
+          rateLimitError.code = 'SPOTIFY_RATE_LIMIT';
+          rateLimitError.status = 429;
+          throw rateLimitError;
+        }
+        throw axiosError;
+      }
+    }
+    if (!tokenResp) {
+      const rateLimitError = new Error('Spotify 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');
+      rateLimitError.code = 'SPOTIFY_RATE_LIMIT';
+      rateLimitError.status = 429;
+      throw rateLimitError;
+    }
     const { access_token, refresh_token: newRefresh, scope } = tokenResp.data || {};
 
     if (!access_token) {
@@ -340,6 +464,10 @@ async function getAccessTokenForUser(userId) {
       revokedError.code = 'TOKEN_REVOKED';
       revokedError.requiresReauth = true;
       throw revokedError;
+    }
+    if (error.code === 'SPOTIFY_RATE_LIMIT' || error.status === 429) {
+      console.error('[getAccessTokenForUser:spotifyAuthController] Spotify rate limit reached for userId:', userId);
+      throw error;
     }
     console.error('[getAccessTokenForUser:spotifyAuthController] Token refresh failed:', {
       status: error.response?.status,

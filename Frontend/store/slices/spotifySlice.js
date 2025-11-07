@@ -3,6 +3,61 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as apiService from '../../services/apiService';
 
+const SPOTIFY_STORAGE_KEYS = {
+  accessToken: 'stonetify.spotify.accessToken',
+  refreshTokenEnc: 'stonetify.spotify.refreshTokenEnc',
+  tokenExpiry: 'stonetify.spotify.tokenExpiry',
+  isPremium: 'stonetify.spotify.isPremium',
+};
+
+const persistSpotifySession = async ({ accessToken, refreshTokenEnc, tokenExpiry, isPremium }) => {
+  try {
+    const sets = [];
+    const removals = [];
+
+    if (typeof accessToken === 'string' && accessToken.length > 0) {
+      sets.push([SPOTIFY_STORAGE_KEYS.accessToken, accessToken]);
+    } else {
+      removals.push(SPOTIFY_STORAGE_KEYS.accessToken);
+    }
+
+    if (typeof refreshTokenEnc === 'string' && refreshTokenEnc.length > 0) {
+      sets.push([SPOTIFY_STORAGE_KEYS.refreshTokenEnc, refreshTokenEnc]);
+    } else {
+      removals.push(SPOTIFY_STORAGE_KEYS.refreshTokenEnc);
+    }
+
+    if (Number.isFinite(tokenExpiry)) {
+      sets.push([SPOTIFY_STORAGE_KEYS.tokenExpiry, String(tokenExpiry)]);
+    } else {
+      removals.push(SPOTIFY_STORAGE_KEYS.tokenExpiry);
+    }
+
+    if (typeof isPremium === 'boolean') {
+      sets.push([SPOTIFY_STORAGE_KEYS.isPremium, isPremium ? '1' : '0']);
+    } else {
+      removals.push(SPOTIFY_STORAGE_KEYS.isPremium);
+    }
+
+    if (sets.length > 0) {
+      await AsyncStorage.multiSet(sets);
+    }
+    if (removals.length > 0) {
+      await AsyncStorage.multiRemove(removals);
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to persist Spotify session:', error?.message || error);
+  }
+};
+
+const clearSpotifySessionStorage = async () => {
+  try {
+    await AsyncStorage.multiRemove(Object.values(SPOTIFY_STORAGE_KEYS));
+  } catch (error) {
+    console.warn('⚠️ Failed to clear Spotify session storage:', error?.message || error);
+  }
+};
+
 const initialState = {
   searchResults: [],
   status: 'idle',
@@ -33,10 +88,44 @@ export const exchangeSpotifyCode = createAsyncThunk(
   'spotify/exchangeCode',
   async (payload, thunkAPI) => {
     try {
+      console.log('[exchangeSpotifyCode] Sending request with payload:', {
+        userId: payload.userId,
+        redirectUri: payload.redirect_uri,
+        hasCode: !!payload.code,
+        hasCodeVerifier: !!payload.code_verifier
+      });
+      
       const data = await apiService.exchangeSpotifyCode(payload);
+      
+      console.log('[exchangeSpotifyCode] Received response:', {
+        hasAccessToken: !!data.accessToken,
+        hasRefreshTokenEnc: !!data.refreshTokenEnc,
+        expiresIn: data.expiresIn
+      });
+      
+      if (!data.accessToken || !data.refreshTokenEnc) {
+        console.error('[exchangeSpotifyCode] Missing tokens in response');
+        return thunkAPI.rejectWithValue('Spotify 토큰을 받지 못했습니다. 다시 시도해주세요.');
+      }
+      
+      const tokenExpiry = Date.now() + (data.expiresIn * 1000) - 60000;
+      await persistSpotifySession({
+        accessToken: data.accessToken,
+        refreshTokenEnc: data.refreshTokenEnc,
+        tokenExpiry,
+        isPremium: data.isPremium,
+      });
       await AsyncStorage.removeItem('spotifyNeedsReauth');
-      return data;
+      
+      console.log('[exchangeSpotifyCode] Session persisted successfully');
+      return { ...data, tokenExpiry };
     } catch (e) {
+      console.error('[exchangeSpotifyCode] Error:', {
+        status: e?.response?.status,
+        error: e?.response?.data?.error,
+        message: e?.response?.data?.message || e?.message
+      });
+      
       const message = e?.response?.data?.message
         || e?.response?.data?.error_description
         || e?.response?.data?.error
@@ -62,12 +151,20 @@ export const refreshSpotifyToken = createAsyncThunk(
         || Constants.expoConfig?.extra?.spotifyClientId;
 
       const data = await apiService.refreshSpotifyToken({ userId, client_id: clientId });
-      return data;
+      const tokenExpiry = Date.now() + (data.expiresIn * 1000) - 60000;
+      await persistSpotifySession({
+        accessToken: data.accessToken,
+        refreshTokenEnc: data.refreshTokenEnc,
+        tokenExpiry,
+        isPremium: data.isPremium,
+      });
+      return { ...data, tokenExpiry };
     } catch (e) {
       const errorMessage = e?.response?.data?.message || e?.message || 'Spotify 토큰 갱신 실패';
 
       // Handle TOKEN_REVOKED error
       if (e?.response?.data?.error === 'TOKEN_REVOKED' || e?.response?.data?.requiresReauth) {
+        await clearSpotifySessionStorage();
         return thunkAPI.rejectWithValue({
           message: errorMessage,
           error: 'TOKEN_REVOKED',
@@ -112,9 +209,39 @@ export const revokeSpotify = createAsyncThunk(
     try {
       const userId = thunkAPI.getState().auth.user?.id || 'anon';
       await apiService.revokeSpotifySession(userId);
+      await clearSpotifySessionStorage();
       return {};
     } catch (e) {
       return thunkAPI.rejectWithValue('Spotify 세션 해제 실패');
+    }
+  }
+);
+
+export const hydrateSpotifySession = createAsyncThunk(
+  'spotify/hydrateSession',
+  async (_, thunkAPI) => {
+    try {
+      const entries = await AsyncStorage.multiGet(Object.values(SPOTIFY_STORAGE_KEYS));
+      const map = entries.reduce((acc, [key, value]) => {
+        acc[key] = value;
+        return acc;
+      }, {});
+
+      const accessToken = map[SPOTIFY_STORAGE_KEYS.accessToken] || null;
+      const refreshTokenEnc = map[SPOTIFY_STORAGE_KEYS.refreshTokenEnc] || null;
+      const tokenExpiryStr = map[SPOTIFY_STORAGE_KEYS.tokenExpiry] || null;
+      const isPremiumRaw = map[SPOTIFY_STORAGE_KEYS.isPremium];
+      const tokenExpiry = tokenExpiryStr ? parseInt(tokenExpiryStr, 10) : null;
+
+      return {
+        accessToken,
+        refreshTokenEnc,
+        tokenExpiry: Number.isFinite(tokenExpiry) ? tokenExpiry : null,
+        isPremium: isPremiumRaw === '1' ? true : isPremiumRaw === '0' ? false : null,
+      };
+    } catch (error) {
+      console.warn('⚠️ Failed to hydrate Spotify session:', error?.message || error);
+      return thunkAPI.rejectWithValue('Spotify 세션 복원 실패');
     }
   }
 );
@@ -166,8 +293,10 @@ const spotifySlice = createSlice({
         state.authError = null;
         state.accessToken = action.payload.accessToken;
         state.refreshTokenEnc = action.payload.refreshTokenEnc;
-  state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000; // renew 60s earlier
-        state.isPremium = action.payload.isPremium;
+        state.tokenExpiry = action.payload.tokenExpiry ?? null;
+        if (typeof action.payload.isPremium === 'boolean') {
+          state.isPremium = action.payload.isPremium;
+        }
         state.requiresReauth = false;
       })
       .addCase(exchangeSpotifyCode.rejected, (state, action) => {
@@ -177,7 +306,10 @@ const spotifySlice = createSlice({
       .addCase(refreshSpotifyToken.fulfilled, (state, action) => {
         state.accessToken = action.payload.accessToken;
         state.refreshTokenEnc = action.payload.refreshTokenEnc;
-        state.tokenExpiry = Date.now() + (action.payload.expiresIn * 1000) - 60000;
+        state.tokenExpiry = action.payload.tokenExpiry ?? null;
+        if (typeof action.payload.isPremium === 'boolean') {
+          state.isPremium = action.payload.isPremium;
+        }
         state.requiresReauth = false;
         state.authError = null;
       })
@@ -199,15 +331,40 @@ const spotifySlice = createSlice({
       .addCase(fetchSpotifyProfile.fulfilled, (state, action) => {
         if (typeof action.payload.isPremium === 'boolean') state.isPremium = action.payload.isPremium;
       });
-      builder.addCase(revokeSpotify.fulfilled, (state) => {
-        state.accessToken = null;
-        state.refreshTokenEnc = null;
-        state.tokenExpiry = null;
-        state.isPremium = false;
-        state.requiresReauth = true;
-      });
+      builder
+        .addCase(revokeSpotify.fulfilled, (state) => {
+          state.accessToken = null;
+          state.refreshTokenEnc = null;
+          state.tokenExpiry = null;
+          state.isPremium = false;
+          state.requiresReauth = true;
+        })
+        .addCase(hydrateSpotifySession.fulfilled, (state, action) => {
+          if (!action.payload) {
+            return;
+          }
+          const { accessToken, refreshTokenEnc, tokenExpiry, isPremium } = action.payload;
+          state.accessToken = accessToken || null;
+          state.refreshTokenEnc = refreshTokenEnc || null;
+          state.tokenExpiry = Number.isFinite(tokenExpiry) ? tokenExpiry : null;
+          if (typeof isPremium === 'boolean') {
+            state.isPremium = isPremium;
+          }
+          state.requiresReauth = !refreshTokenEnc;
+        })
+        .addCase(hydrateSpotifySession.rejected, (state) => {
+          state.accessToken = null;
+          state.refreshTokenEnc = null;
+          state.tokenExpiry = null;
+        });
   },
 });
 
 export const { clearSearchResults, clearSpotifySession, resetSpotifyReauthFlag } = spotifySlice.actions;
+
+export const clearSpotifySessionWithStorage = (payload) => async (dispatch) => {
+  await clearSpotifySessionStorage();
+  dispatch(clearSpotifySession(payload));
+};
+
 export default spotifySlice.reducer;

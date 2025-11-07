@@ -13,7 +13,7 @@ import { useSpotifyAuth } from '../hooks/useSpotifyAuth';
 import * as AuthSession from 'expo-auth-session';
 import Constants from 'expo-constants';
 import { showToast } from '../utils/toast';
-import { exchangeSpotifyCode, getPremiumStatus, fetchSpotifyProfile, clearSpotifySession } from '../store/slices/spotifySlice';
+import { exchangeSpotifyCode, getPremiumStatus, fetchSpotifyProfile, clearSpotifySessionWithStorage } from '../store/slices/spotifySlice';
 import apiService from '../services/apiService';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -33,7 +33,9 @@ const ProfileScreen = ({ navigation, route }) => {
     const userId = user?.id || user?.userId;
     const [profileStats, setProfileStats] = useState({ followers: 0, following: 0 });
     const followStatsRef = useRef(profileStats);
-    
+    const deviceSetupDoneRef = useRef(false); // 디바이스 설정이 한 번만 실행되도록
+    const spotifyReauthWarningRef = useRef(false);
+
     // Spotify 인증 훅 사용 (입력: userId, 효과: 인증 플로우 관리)
     const { connectSpotify, redirectUri, authError } = useSpotifyAuth(userId);
 
@@ -76,6 +78,135 @@ const ProfileScreen = ({ navigation, route }) => {
     useEffect(() => {
         loadProfileStats();
     }, [loadProfileStats]);
+
+    // Spotify 연결되어 있을 때 자동으로 모바일 디바이스로 강제 전환
+    useEffect(() => {
+        if (!spotify?.accessToken) {
+            deviceSetupDoneRef.current = false;
+        } else {
+            spotifyReauthWarningRef.current = false;
+        }
+    }, [spotify?.accessToken]);
+
+    useEffect(() => {
+        const autoSetupMobileDevice = async () => {
+            // 이미 설정했거나, Spotify가 연결되지 않았으면 스킵
+            if (
+                deviceSetupDoneRef.current ||
+                !spotify?.accessToken ||
+                !spotify?.isPremium ||
+                spotify?.requiresReauth ||
+                !userId
+            ) {
+                return;
+            }
+
+            deviceSetupDoneRef.current = true; // 한 번만 실행되도록 표시
+
+            try {
+                console.log('[ProfileScreen] 🔍 Checking for mobile device...');
+
+                // 디바이스 목록을 여러 번 시도
+                let devices = [];
+                let attempts = 0;
+                const maxAttempts = 3;
+
+                const isTokenRevokedError = (err) => {
+                    if (!err) return false;
+                    if (err.requiresReauth) return true;
+                    const code = err.code || err.response?.data?.error;
+                    if (typeof code === 'string' && code.toUpperCase() === 'TOKEN_REVOKED') {
+                        return true;
+                    }
+                    const message =
+                        err?.response?.data?.message ||
+                        err?.message ||
+                        '';
+                    return /만료되었습니다|다시 로그인/i.test(message);
+                };
+
+                while (attempts < maxAttempts) {
+                    try {
+                        const devicesData = await apiService.getRemoteDevices(userId);
+                        devices = devicesData?.devices || [];
+                        if (devices.length > 0) break;
+                        attempts++;
+                        if (attempts < maxAttempts) {
+                            console.log(`[ProfileScreen] No devices found, retrying... (${attempts}/${maxAttempts})`);
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                    } catch (e) {
+                        if (isTokenRevokedError(e)) {
+                            if (!spotifyReauthWarningRef.current) {
+                                console.warn('[ProfileScreen] Spotify session expired; skipping auto device setup until reconnected.');
+                                spotifyReauthWarningRef.current = true;
+                            }
+                            attempts = maxAttempts;
+                            break;
+                        }
+                        console.warn('[ProfileScreen] Device fetch attempt failed:', e?.message || e);
+                        attempts++;
+                        if (attempts < maxAttempts) {
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                        }
+                    }
+                }
+
+                if (devices.length > 0) {
+                    // 모바일 디바이스 찾기
+                    const mobileDevice = devices.find(d => d.type === 'Smartphone');
+
+                    if (mobileDevice) {
+                        console.log('[ProfileScreen] ✅ Found mobile device:', mobileDevice.name, '(active:', mobileDevice.is_active + ')');
+
+                        // 모바일 디바이스가 비활성 상태이거나 다른 디바이스가 활성 상태일 때 강제 전환
+                        if (!mobileDevice.is_active) {
+                            try {
+                                // play: true로 강제 활성화
+                                await apiService.transferRemotePlayback({
+                                    userId: userId,
+                                    device_id: mobileDevice.id,
+                                    play: true
+                                });
+                                console.log('[ProfileScreen] ✅ Forcefully transferred playback to mobile device');
+
+                                // 즉시 일시정지
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                await apiService.pauseRemote(userId);
+                                console.log('[ProfileScreen] ✅ Paused to keep device active');
+                            } catch (transferError) {
+                                console.warn('[ProfileScreen] Transfer failed:', transferError.message);
+                                // 재시도
+                                try {
+                                    await new Promise(resolve => setTimeout(resolve, 1000));
+                                    await apiService.transferRemotePlayback({
+                                        userId: userId,
+                                        device_id: mobileDevice.id,
+                                        play: false
+                                    });
+                                    console.log('[ProfileScreen] ✅ Retried successfully');
+                                } catch (retryError) {
+                                    console.warn('[ProfileScreen] Retry failed:', retryError.message);
+                                }
+                            }
+                        } else {
+                            console.log('[ProfileScreen] ℹ️ Mobile device already active');
+                        }
+                    } else {
+                        console.log('[ProfileScreen] ℹ️ No mobile device found');
+                    }
+                }
+            } catch (error) {
+                const message = error?.message || '알 수 없는 오류';
+                if (!spotifyReauthWarningRef.current) {
+                    console.warn('[ProfileScreen] ⚠️ Auto device setup failed (non-fatal):', message);
+                }
+            }
+        };
+
+        // ProfileScreen이 처음 마운트되고 Spotify가 연결되었을 때만 실행
+        autoSetupMobileDevice();
+    }, [spotify?.accessToken, spotify?.isPremium, spotify?.requiresReauth, userId]);
 
     useFocusEffect(
         useCallback(() => {
@@ -176,7 +307,7 @@ const ProfileScreen = ({ navigation, route }) => {
         try {
             // 기존 Spotify 세션 완전히 제거 (새로운 scope로 재인증 필요)
             console.log('[SpotifyAuth] Clearing any existing Spotify session before new login...');
-            await dispatch(clearSpotifySession({ reason: 'proactive_reauth' }));
+            await dispatch(clearSpotifySessionWithStorage({ reason: 'proactive_reauth' }));
             await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
             
             const clientId = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID
@@ -315,9 +446,83 @@ const ProfileScreen = ({ navigation, route }) => {
                 
                 console.log('[SpotifyAuth] ✅ Token exchange successful');
                 showToast('Spotify 연결 성공!');
-                
+
                 await dispatch(getPremiumStatus());
                 await dispatch(fetchSpotifyProfile());
+
+                // 자동으로 모바일 디바이스 찾고 강제 전환
+                try {
+                    console.log('[SpotifyAuth] 🔍 Auto-detecting mobile device...');
+                    // 디바이스 목록을 여러 번 시도 (Spotify API가 즉시 업데이트되지 않을 수 있음)
+                    let devices = [];
+                    let attempts = 0;
+                    const maxAttempts = 3;
+
+                    while (attempts < maxAttempts) {
+                        try {
+                            const devicesData = await apiService.getRemoteDevices(user.id || user.userId);
+                            devices = devicesData?.devices || [];
+                            if (devices.length > 0) break;
+                            attempts++;
+                            if (attempts < maxAttempts) {
+                                console.log(`[SpotifyAuth] No devices found, retrying... (${attempts}/${maxAttempts})`);
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            }
+                        } catch (e) {
+                            console.warn('[SpotifyAuth] Device fetch attempt failed:', e.message);
+                            attempts++;
+                            if (attempts < maxAttempts) {
+                                await new Promise(resolve => setTimeout(resolve, 1000));
+                            }
+                        }
+                    }
+
+                    if (devices.length > 0) {
+                        // 모바일 디바이스 우선 찾기
+                        let mobileDevice = devices.find(d => d.type === 'Smartphone');
+
+                        if (mobileDevice) {
+                            console.log('[SpotifyAuth] ✅ Found mobile device:', mobileDevice.name);
+                            // 모바일 디바이스로 강제 전환 (play: true로 활성화)
+                            try {
+                                await apiService.transferRemotePlayback({
+                                    userId: user.id || user.userId,
+                                    device_id: mobileDevice.id,
+                                    play: true // 강제로 활성화
+                                });
+                                console.log('[SpotifyAuth] ✅ Forcefully transferred playback to mobile device');
+
+                                // 즉시 일시정지하여 재생은 방지하되 디바이스는 활성 상태 유지
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                                await apiService.pauseRemote(user.id || user.userId);
+                                console.log('[SpotifyAuth] ✅ Paused playback to keep device active');
+                            } catch (transferError) {
+                                console.warn('[SpotifyAuth] Transfer or pause failed:', transferError.message);
+                                // 재시도
+                                try {
+                                    await new Promise(resolve => setTimeout(resolve, 1000));
+                                    await apiService.transferRemotePlayback({
+                                        userId: user.id || user.userId,
+                                        device_id: mobileDevice.id,
+                                        play: false
+                                    });
+                                    console.log('[SpotifyAuth] ✅ Retried device transfer successfully');
+                                } catch (retryError) {
+                                    console.warn('[SpotifyAuth] Retry failed:', retryError.message);
+                                }
+                            }
+                        } else {
+                            console.log('[SpotifyAuth] ℹ️ No mobile device found, available devices:', devices.map(d => ({ name: d.name, type: d.type })));
+                            showToast('모바일에서 Spotify 앱을 열어주세요');
+                        }
+                    } else {
+                        console.log('[SpotifyAuth] ℹ️ No devices available after all attempts');
+                        showToast('Spotify 앱을 열어 디바이스를 활성화해주세요');
+                    }
+                } catch (deviceError) {
+                    console.warn('[SpotifyAuth] ⚠️ Auto device transfer failed (non-fatal):', deviceError.message);
+                    // 디바이스 전환 실패는 치명적이지 않으므로 무시
+                }
             } catch (tokenError) {
                 console.error('[SpotifyAuth] Token exchange failed:', tokenError);
                 throw tokenError;

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiService from '../../services/apiService';
 
 const AI_RECOMMENDATION_CACHE_KEY = 'stonetify.ai.recommendations.cache';
+export const POPULAR_CHART_CACHE_TTL_MS = 2 * 60 * 1000; // 2분 캐시 유지
 
 const initialState = {
   userPlaylists: [],
@@ -10,6 +11,9 @@ const initialState = {
   recommendedPlaylists: [],
   forYouPlaylists: [],
   popularPlaylists: [],
+  popularPlaylistsCache: {},
+  popularStatus: 'idle',
+  popularPeriod: 'weekly',
   currentPlaylist: null,
   status: 'idle', // 'idle' | 'loading' | 'succeeded' | 'failed'
   error: null,
@@ -43,10 +47,42 @@ export const fetchPopularPlaylists = createAsyncThunk(
   async ({ period, limit }, thunkAPI) => {
     try {
       const result = await apiService.getPopularPlaylists(period, limit);
-      return result;
+      return { data: result, period, limit };
     } catch (error) {
-      return thunkAPI.rejectWithValue('인기 플레이리스트를 불러오는데 실패했습니다.');
+      console.error('❌ fetchPopularPlaylists error:', error);
+      const message = error.response?.data?.error || error.message || '인기 플레이리스트를 불러오는데 실패했습니다.';
+      return thunkAPI.rejectWithValue(message);
     }
+  },
+  {
+    condition: ({ period, limit }, { getState }) => {
+      const state = getState();
+      const playlistState = state?.playlist;
+      if (!playlistState) return true;
+
+      if (playlistState.popularStatus === 'loading' && playlistState.popularPeriod === period) {
+        return false;
+      }
+
+      const cacheEntry = playlistState.popularPlaylistsCache?.[period];
+      if (!cacheEntry || !Array.isArray(cacheEntry.data)) {
+        return true;
+      }
+
+      const isLimitSatisfied = typeof cacheEntry.limit === 'number'
+        ? cacheEntry.limit >= (limit || 0)
+        : cacheEntry.data.length >= (limit || 0);
+
+      if (!isLimitSatisfied) {
+        return true;
+      }
+
+      if (typeof cacheEntry.expiresAt === 'number' && cacheEntry.expiresAt > Date.now()) {
+        return false;
+      }
+
+      return true;
+    },
   }
 );
 
@@ -313,7 +349,21 @@ export const deletePlaylistAsync = createAsyncThunk(
 const playlistSlice = createSlice({
   name: 'playlist',
   initialState,
-  reducers: {},
+  reducers: {
+    hydratePopularFromCache: (state, action) => {
+      const period = action?.payload?.period;
+      if (!period) return;
+      const cacheEntry = state.popularPlaylistsCache?.[period];
+      if (!cacheEntry || !Array.isArray(cacheEntry.data)) return;
+      state.popularPlaylists = cacheEntry.data;
+      state.popularPeriod = period;
+      state.popularStatus = 'succeeded';
+      state.error = null;
+    },
+    clearPopularCache: (state) => {
+      state.popularPlaylistsCache = {};
+    },
+  },
   extraReducers: (builder) => {
     builder
       // fetchMyPlaylists (내 플레이리스트)
@@ -603,15 +653,34 @@ const playlistSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload;
       })
-      .addCase(fetchPopularPlaylists.pending, (state) => {
-        state.status = 'loading';
+      .addCase(fetchPopularPlaylists.pending, (state, action) => {
+        const period = action?.meta?.arg?.period || state.popularPeriod;
+        state.popularStatus = 'loading';
+        state.popularPeriod = period;
+        state.error = null;
       })
       .addCase(fetchPopularPlaylists.fulfilled, (state, action) => {
-        state.status = 'succeeded';
-        state.popularPlaylists = action.payload;
+        const period = action?.payload?.period || action?.meta?.arg?.period || state.popularPeriod;
+        const incoming = Array.isArray(action?.payload?.data) ? action.payload.data : [];
+        const now = Date.now();
+        state.popularPlaylists = incoming;
+        state.popularPeriod = period;
+        state.popularStatus = 'succeeded';
+        state.error = null;
+        state.popularPlaylistsCache = {
+          ...state.popularPlaylistsCache,
+          [period]: {
+            data: incoming,
+            limit: typeof action?.payload?.limit === 'number' ? action.payload.limit : incoming.length,
+            cachedAt: now,
+            expiresAt: now + POPULAR_CHART_CACHE_TTL_MS,
+          },
+        };
       })
       .addCase(fetchPopularPlaylists.rejected, (state, action) => {
-        state.status = 'failed';
+        const period = action?.meta?.arg?.period || state.popularPeriod;
+        state.popularStatus = 'failed';
+        state.popularPeriod = period;
         state.error = action.payload;
       })
       .addCase(savePlaylistAsync.pending, (state) => {
@@ -686,4 +755,5 @@ const playlistSlice = createSlice({
   },
 });
 
+export const { hydratePopularFromCache, clearPopularCache } = playlistSlice.actions;
 export default playlistSlice.reducer;

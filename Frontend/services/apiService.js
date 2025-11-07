@@ -208,6 +208,23 @@ const invalidateCacheByUrl = (url) => {
   apiCache.deletePrefix(url);
 };
 
+const AUTH_CACHE_PREFIX = 'auth';
+const buildCacheKeyFromConfig = (config = {}) => {
+  const url = typeof config.url === 'string' && config.url.length > 0 ? config.url : '__unknown__';
+  const baseKey = getCacheKey(url, config.params);
+  const headers = config.headers || {};
+  const authHeader = headers.Authorization || headers.authorization;
+  if (typeof authHeader !== 'string') {
+    return `${baseKey}::${AUTH_CACHE_PREFIX}:anon`;
+  }
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) {
+    return `${baseKey}::${AUTH_CACHE_PREFIX}:anon`;
+  }
+  const fingerprint = token.length <= 16 ? token : token.slice(-16);
+  return `${baseKey}::${AUTH_CACHE_PREFIX}:${fingerprint}`;
+};
+
 // 인증 관련 엔드포인트 패턴 (캐시 제외 대상)
 const AUTH_ENDPOINTS = [
   '/users/login',
@@ -288,6 +305,7 @@ const getNetworkErrorMessage = (error) => {
 
 // 요청 인터셉터 (토큰 자동 추가 + 캐싱)
 api.interceptors.request.use(async (config) => {
+  config.headers = config.headers || {};
   const token = await AsyncStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -305,7 +323,8 @@ api.interceptors.request.use(async (config) => {
   
   // GET 요청 캐싱 확인 (인증 엔드포인트는 완전히 제외)
   if (config.method === 'get' && !isAuth) {
-    const cacheKey = getCacheKey(config.url, config.params);
+    const cacheKey = buildCacheKeyFromConfig(config);
+    config._cacheKey = cacheKey;
     const cachedData = getCachedData(cacheKey);
     if (cachedData) {
       // 캐시된 데이터를 즉시 반환
@@ -330,7 +349,7 @@ api.interceptors.response.use(
   (response) => {
     // GET 요청 결과 캐싱 (인증 엔드포인트는 제외)
     if (response.config.method === 'get' && response.status === 200 && !isAuthEndpoint(response.config.url)) {
-      const cacheKey = getCacheKey(response.config.url, response.config.params);
+      const cacheKey = response.config._cacheKey || buildCacheKeyFromConfig(response.config);
       setCachedData(cacheKey, response.data);
     }
     return response;
@@ -359,11 +378,16 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && error.response?.data?.error === 'TOKEN_REVOKED') {
       console.error('🔴 [API] Spotify token revoked - clearing session');
       
-      // Clear all auth data
-  await AsyncStorage.multiRemove(['spotifyToken', 'spotifyRefreshToken']);
-  await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
+      // Clear all Spotify auth data from AsyncStorage
+      await AsyncStorage.multiRemove([
+        'stonetify.spotify.accessToken',
+        'stonetify.spotify.refreshTokenEnc',
+        'stonetify.spotify.tokenExpiry',
+        'stonetify.spotify.isPremium'
+      ]);
+      await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
 
-  // Enhance error with user-friendly message
+      // Enhance error with user-friendly message
       const revokedError = new Error('Spotify 연결이 만료되었습니다. 다시 로그인해주세요.');
       revokedError.code = 'TOKEN_REVOKED';
       revokedError.requiresReauth = true;
@@ -497,7 +521,18 @@ export const updateProfile = (profileData) => api.put('users/profile', profileDa
 export const deleteAccount = () => api.delete('users/me').then(res => res.data);
 
 // Playlist Management APIs
-export const createPlaylist = (playlistData) => api.post('playlists', playlistData).then(res => res.data);
+export const createPlaylist = async (playlistData) => {
+  try {
+    const response = await api.post('playlists', playlistData);
+    invalidateCacheByUrl('playlists/me');
+    invalidateCacheByUrl('playlists/');
+    invalidateCacheByUrl('playlists');
+    return response.data;
+  } catch (error) {
+    console.error('❌ [API Service] createPlaylist 실패:', error);
+    throw error;
+  }
+};
 export const getMyPlaylists = () => api.get('playlists/me').then(res => res.data);
 export const getPlaylistsByUserId = (userId) => api.get(`playlists/user/${userId}`).then(res => res.data);
 export const getPlaylistById = (playlistId) => api.get(`playlists/${playlistId}`).then(res => res.data);

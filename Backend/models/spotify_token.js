@@ -2,6 +2,49 @@ const crypto = require('crypto');
 const { COLLECTIONS, RealtimeDBHelpers, isFirebaseReady } = require('../config/firebase');
 const { encrypt, decrypt } = require('../utils/encryption');
 
+const PLAIN_PREFIX = 'plain::';
+let encryptionFallbackWarned = false;
+let decryptionFallbackWarned = false;
+
+function safeEncrypt(plain) {
+  if (typeof plain !== 'string' || plain.length === 0) {
+    return null;
+  }
+  try {
+    return encrypt(plain);
+  } catch (error) {
+    if (isFirebaseReady) {
+      throw error;
+    }
+    if (!encryptionFallbackWarned) {
+      console.warn('[SpotifyTokenModel] Encryption unavailable, storing refresh tokens with temporary in-memory fallback. Reason:', error?.message || error);
+      encryptionFallbackWarned = true;
+    }
+    return `${PLAIN_PREFIX}${plain}`;
+  }
+}
+
+function safeDecrypt(payload) {
+  if (typeof payload !== 'string' || payload.length === 0) {
+    return null;
+  }
+  if (payload.startsWith(PLAIN_PREFIX)) {
+    return payload.slice(PLAIN_PREFIX.length);
+  }
+  try {
+    return decrypt(payload);
+  } catch (error) {
+    if (isFirebaseReady) {
+      throw error;
+    }
+    if (!decryptionFallbackWarned) {
+      console.error('[SpotifyTokenModel] Failed to decrypt refresh token:', error?.message || error);
+      decryptionFallbackWarned = true;
+    }
+    return null;
+  }
+}
+
 const inMemoryTokens = new Map();
 
 const DEFAULT_HISTORY_LIMIT = 5;
@@ -51,7 +94,7 @@ function upsertInMemory(userId, plainRefreshToken, scope, options = {}) {
   const existing = inMemoryTokens.get(userId);
   const now = Date.now();
   const isRotation = Boolean(plainRefreshToken);
-  const enc = isRotation ? encrypt(plainRefreshToken) : null;
+  const enc = isRotation ? safeEncrypt(plainRefreshToken) : null;
   const clientId = options.clientId || existing?.client_id || null;
 
   if (!existing) {
@@ -118,7 +161,7 @@ class SpotifyTokenModel {
     const existing = await this.getByUser(userId);
     const now = Date.now();
     const isRotation = Boolean(plainRefreshToken);
-    const enc = isRotation ? encrypt(plainRefreshToken) : null;
+  const enc = isRotation ? safeEncrypt(plainRefreshToken) : null;
 
     if (!existing) {
       if (!isRotation) {
@@ -199,7 +242,7 @@ class SpotifyTokenModel {
 
   static decryptRefresh(record) {
     if (!record || !record.refresh_token_enc) return null;
-    return decrypt(record.refresh_token_enc);
+    return safeDecrypt(record.refresh_token_enc);
   }
   
   static async delete(id) {

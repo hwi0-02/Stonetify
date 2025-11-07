@@ -225,7 +225,6 @@ const SearchScreen = () => {
       }
 
       await apiService.addSongToPlaylist(resolvedPlaylistId, selectedSong);
-      await dispatch(fetchMyPlaylists()).unwrap(); // ❗ 추가: 플레이리스트 목록 새로고침
       setModalVisible(false);
       const addedSongLabel = selectedSong.name || selectedSong.title || '곡';
       await showToast(`'${addedSongLabel}'을 플레이리스트에 추가했습니다.`, 1600);
@@ -361,7 +360,8 @@ const SearchScreen = () => {
 
   const renderTrackListItem = (item) => {
     const trackKey = item.spotify_id || item.id || null;
-    const isLiked = trackKey ? !!likedMapGlobal[trackKey] : false;
+    // 좋아요한 곡 목록에서는 무조건 liked=true, 검색 결과에서는 likedMapGlobal 확인
+    const isLiked = showLiked ? true : (trackKey ? !!likedMapGlobal[trackKey] : false);
 
     return (
       <SongListItem
@@ -428,7 +428,9 @@ const SearchScreen = () => {
       setModalVisible(false);
       setSelectedSong(null);
       setSelectedPlaylistId(null);
+      const createdPlaylistId = newlyCreatedPlaylistId;
       setNewlyCreatedPlaylistId(null);
+      setQuery(''); // 검색 창 초기화
       if (navigation.setParams) {
         navigation.setParams({
           isCreatingPlaylist: false,
@@ -436,7 +438,14 @@ const SearchScreen = () => {
           playlistDescription: undefined,
         });
       }
-      navigation.navigate('Main', { screen: 'Profile' });
+      // 생성한 플레이리스트 상세 화면으로 이동하되, 뒤로가기 시 Home으로 복귀
+      navigation.reset({
+        index: 1,
+        routes: [
+          { name: 'Main', params: { screen: 'Home' } },
+          { name: 'PlaylistDetail', params: { playlistId: createdPlaylistId } }
+        ],
+      });
     }
   }, [dispatch, newlyCreatedPlaylistId, navigation, isFinalizingPlaylist]);
 

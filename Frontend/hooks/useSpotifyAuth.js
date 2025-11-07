@@ -6,7 +6,7 @@ import Constants from 'expo-constants';
 import { useDispatch, useSelector } from 'react-redux';
 import { showToast } from '../utils/toast';
 import {
-  clearSpotifySession,
+  clearSpotifySessionWithStorage,
   exchangeSpotifyCode,
   getPremiumStatus,
   fetchSpotifyProfile,
@@ -214,7 +214,7 @@ export function useSpotifyAuth(userId) {
     if (!hasUser) return showToast('로그인이 필요합니다.');
     if (!request) return showToast('Spotify 로그인 준비 중입니다. 잠시 후 다시 시도해주세요.');
 
-    await dispatch(clearSpotifySession({ reason: 'proactive_reauth' }));
+    await dispatch(clearSpotifySessionWithStorage({ reason: 'proactive_reauth' }));
     await AsyncStorage.setItem('spotifyNeedsReauth', 'true');
 
     try {

@@ -25,8 +25,8 @@ export const toggleLikeSongThunk = createAsyncThunk(
   async (song, thunkAPI) => {
     try {
       const key = song.id || song.spotify_id;
-      await apiService.toggleLikeSong(key, song);
-      return song;
+      const response = await apiService.toggleLikeSong(key, song);
+      return { song, liked: response.liked };
     } catch (e) {
       return thunkAPI.rejectWithValue('곡 좋아요 처리에 실패했습니다.');
     }
@@ -98,6 +98,7 @@ const likedSongsSlice = createSlice({
         state.error = action.payload;
       })
       .addCase(toggleLikeSongThunk.pending, (state, action) => {
+        // 낙관적 업데이트 - 즉시 UI 반영
         const song = action.meta.arg || {};
         const keys = getKeys(song);
         if (keys.length === 0) return;
@@ -109,8 +110,25 @@ const likedSongsSlice = createSlice({
           state.list = removeByKeys(state.list, keys);
         }
       })
-      .addCase(toggleLikeSongThunk.fulfilled, (state, action) => {})
+      .addCase(toggleLikeSongThunk.fulfilled, (state, action) => {
+        // 서버 응답으로 최종 상태 확정
+        const { song, liked } = action.payload || {};
+        if (!song) return;
+        const keys = getKeys(song);
+        if (keys.length === 0) return;
+
+        // 서버가 반환한 liked 값으로 최종 상태 설정
+        keys.forEach(k => { state.map[k] = liked; });
+        if (liked) {
+          // 좋아요 추가
+          state.list = [{ ...song, liked_at: Date.now() }, ...removeByKeys(state.list, keys)];
+        } else {
+          // 좋아요 제거
+          state.list = removeByKeys(state.list, keys);
+        }
+      })
       .addCase(toggleLikeSongThunk.rejected, (state, action) => {
+        // 실패 시 롤백
         const song = action.meta.arg || {};
         const keys = getKeys(song);
         if (keys.length === 0) return;

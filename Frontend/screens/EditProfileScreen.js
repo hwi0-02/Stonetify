@@ -100,16 +100,17 @@ const EditProfileScreen = ({ navigation }) => {
       }
     }
 
-    dispatch(updateUserProfile(profileData))
-      .unwrap()
-      .then(async (updatedUser) => {
-        showToast('프로필이 성공적으로 저장되었습니다.');
-        await dispatch(getMe());
-        navigation.goBack();
-      })
-      .catch((error) => {
-        Alert.alert('저장 실패', error || '프로필 저장 중 오류가 발생했습니다.');
+    try {
+      await dispatch(updateUserProfile(profileData)).unwrap();
+      showToast('프로필이 성공적으로 저장되었습니다.');
+      await dispatch(getMe());
+      // Profile 탭으로 명확하게 이동
+      navigation.navigate('Main', { 
+        screen: 'Profile'
       });
+    } catch (error) {
+      Alert.alert('저장 실패', error || '프로필 저장 중 오류가 발생했습니다.');
+    }
   };
 
   // 계정 삭제 버튼 핸들러 
