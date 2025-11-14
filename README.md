@@ -15,7 +15,7 @@ K-POP 및 인디 음악 팬을 위해 설계된 **Stonetify**는 Spotify 스트�
 
 ## 프로젝트 한눈에 보기
 - **목표**: Spotify 사용자 경험을 확장해 커뮤니티 피드·추천·소셜 그래프를 통합 제공
-- **백엔드**: Express + Firebase Admin SDK + Sequelize(선택적 MySQL) + Kakao/Naver OIDC
+- **백엔드**: Express + Firebase Admin SDK + Kakao/Naver OIDC
 - **프런트엔드**: Expo SDK 54, React Native 0.81, Redux Toolkit 기반 상태 관리
 - **보안**: JWT, 커스텀 암호화 키, CORS 화이트리스트, Expo 심층 링크 검증
 - **배포 대상**: GitHub Actions / Expo EAS / Firebase Hosting or Vercel(콜백 페이지)
@@ -32,8 +32,8 @@ K-POP 및 인디 음악 팬을 위해 설계된 **Stonetify**는 Spotify 스트�
 | 영역 | 사용 기술 |
 | --- | --- |
 | 모바일/웹 클라이언트 | Expo, React Native, React Navigation, Redux Toolkit, Expo AV/Video |
-| 서버/API | Node.js 18+, Express, Firebase Admin, Sequelize, Axios, Nodemailer |
-| 데이터/인프라 | Firebase Realtime Database, (선택) MySQL, Gemini API |
+| 서버/API | Node.js 18+, Express, Firebase Admin, Axios, Nodemailer |
+| 데이터/인프라 | Firebase Realtime Database, Gemini API |
 | 개발 도구 | Nodemon, Expo CLI, PowerShell 터널 스크립트, VS Code, ESLint(선택) |
 
 ## 디렉터리 구조
@@ -43,7 +43,7 @@ Stonetify/
 │  ├─ app.js                  # Express 서버 진입점 및 OAuth 콜백 페이지
 │  ├─ controllers/            # 사용자, 플레이리스트, 소셜, Spotify 등 도메인 컨트롤러
 │  ├─ middleware/             # 인증, 에러, 레이트 리미터
-│  ├─ models/                 # Sequelize 모델 (MySQL 또는 향후 확장 대비)
+│  ├─ models/                 # Firebase Realtime Database 헬퍼 모델 집합
 │  ├─ routes/                 # REST API 라우팅 계층
 │  ├─ utils/                  # Firebase, Gemini, 이메일, 암호화, 환경 검증 등 유틸
 │  └─ scripts/createIndexes.js# Firebase 인덱스 생성 스크립트
@@ -120,7 +120,7 @@ npx expo start --ios
 - **데이터 안전 장치**: Firebase 자격 증명이 비어 있으면 인메모리 모드로 전환되며, 재시작 시 데이터가 삭제됩니다. 콘솔 경고를 확인하세요.
 - **API 문서화**: `routes/*Routes.js` + `controllers/*Controller.js`를 함께 보면 엔드포인트, 권한 체크, 레이트 리미터 정책을 파악할 수 있습니다.
 - **품질 및 모니터링**: `middleware/errorMiddleware.js`를 확장해 Logtail, CloudWatch 등 원하는 로깅 파이프라인에 연결할 수 있습니다.
-- **확장 방향**: `models/` 이하 Sequelize 정의는 향후 MySQL 마이그레이션을 위해 존재하므로, `config/database.js`를 추가하면 바로 관계형 DB로 이관할 수 있습니다.
+- **확장 방향**: `models/`는 Firebase RTDB에 특화되어 있으나, 동일 인터페이스를 유지하면 다른 데이터소스로도 쉽게 교체할 수 있습니다.
 
 ## 기여 & 라이선스
 - 이슈 또는 PR 시 **배경, 재현 절차, 스크린샷**을 포함해주세요.
