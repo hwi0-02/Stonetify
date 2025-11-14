@@ -14,20 +14,6 @@ if (process.env.NODE_ENV !== 'production') {
   }
 }
 
-// Sentry 초기화 (DSN이 없으면 아무 동작도 하지 않음)
-let Sentry = null;
-try {
-  Sentry = require('@sentry/node');
-  if (process.env.SENTRY_DSN) {
-    Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      tracesSampleRate: 0.1,
-      environment: process.env.NODE_ENV || 'development'
-    });
-  }
-} catch (e) {
-  console.log('Sentry not installed (backend), skipping init');
-}
 const cors = require('cors');
 const https = require('https');
 const fs = require('fs');
@@ -100,11 +86,6 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
-
-// Sentry가 활성화된 경우 요청 미들웨어 적용
-if (Sentry && Sentry.getCurrentHub().getClient()) {
-  app.use(Sentry.Handlers.requestHandler());
-}
 
 // 미들웨어 설정
 app.use(cors(corsOptions));
@@ -532,10 +513,6 @@ app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', ts: Date.now() });
 });
 
-// Sentry 에러 핸들러를 우선 적용
-if (Sentry && Sentry.getCurrentHub().getClient()) {
-  app.use(Sentry.Handlers.errorHandler());
-}
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;

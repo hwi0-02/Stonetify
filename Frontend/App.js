@@ -11,36 +11,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { refreshSpotifyToken, getPremiumStatus, fetchSpotifyProfile, hydrateSpotifySession } from './store/slices/spotifySlice';
 import { ensureSpotifyAdapter, suspendAdapterPolling, resumeAdapterPolling } from './adapters';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-// Use sentry-expo wrapper (managed workflow friendly)
-let Sentry;
-try {
-  Sentry = require('sentry-expo');
-} catch (e) {
-  try { Sentry = require('@sentry/react-native'); } catch (_e) { Sentry = null; }
-}
 import { instrumentAdapterSwitch } from './utils/analytics';
-
-// Initialize Sentry (guarded by env & once)
-if (Sentry && !global.__SENTRY_INIT) {
-  try {
-    const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN;
-    if (dsn) {
-      Sentry.init({
-        dsn,
-        enableNative: true,
-        enableNativeCrashHandling: true,
-        tracesSampleRate: 0.2,
-        beforeSend(event) {
-          if (event.request) delete event.request?.cookies;
-          return event;
-        }
-      });
-      global.__SENTRY_INIT = true;
-    }
-  } catch (e) {
-    console.warn('Sentry init failed', e.message);
-  }
-}
 
 function CoreApp() {
   const dispatch = useDispatch();

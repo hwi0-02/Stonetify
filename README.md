@@ -17,7 +17,7 @@ K-POP 및 인디 음악 팬을 위해 설계된 **Stonetify**는 Spotify 스트�
 - **목표**: Spotify 사용자 경험을 확장해 커뮤니티 피드·추천·소셜 그래프를 통합 제공
 - **백엔드**: Express + Firebase Admin SDK + Sequelize(선택적 MySQL) + Kakao/Naver OIDC
 - **프런트엔드**: Expo SDK 54, React Native 0.81, Redux Toolkit 기반 상태 관리
-- **보안**: JWT, 커스텀 암호화 키, CORS 화이트리스트, Sentry/Expo 모니터링
+- **보안**: JWT, 커스텀 암호화 키, CORS 화이트리스트, Expo 심층 링크 검증
 - **배포 대상**: GitHub Actions / Expo EAS / Firebase Hosting or Vercel(콜백 페이지)
 
 ## 주요 기능
@@ -33,7 +33,7 @@ K-POP 및 인디 음악 팬을 위해 설계된 **Stonetify**는 Spotify 스트�
 | --- | --- |
 | 모바일/웹 클라이언트 | Expo, React Native, React Navigation, Redux Toolkit, Expo AV/Video |
 | 서버/API | Node.js 18+, Express, Firebase Admin, Sequelize, Axios, Nodemailer |
-| 데이터/인프라 | Firebase Realtime Database, (선택) MySQL, Sentry, Gemini API |
+| 데이터/인프라 | Firebase Realtime Database, (선택) MySQL, Gemini API |
 | 개발 도구 | Nodemon, Expo CLI, PowerShell 터널 스크립트, VS Code, ESLint(선택) |
 
 ## 디렉터리 구조
@@ -63,7 +63,7 @@ Stonetify/
 - Spotify Developer 앱 (Redirect URI: `https://<backend>/spotify-callback`, `stonetify://spotify-callback` 등)
 - Kakao Developers · Naver Developers REST 앱 등록 및 Redirect URI 매칭
 - (선택) Gmail 앱 비밀번호 또는 SMTP 계정
-- (선택) Gemini API Key, Sentry DSN, HTTPS 인증서 경로
+- (선택) Gemini API Key, HTTPS 인증서 경로
 
 ## 환경 변수
 `.env`는 `Backend/.env`에 위치하며, 프런트 전용 값은 `Frontend/.env`(필요 시)로 분리합니다.
@@ -79,7 +79,6 @@ Stonetify/
 | `ALLOWED_RETURN_ORIGINS`, `FRONTEND_URL`, `WEB_FRONTEND_URL` | CORS 및 Expo Auth Session 화이트리스트 | ⛔ |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `ENABLE_GEMINI` | 추천 프롬프트용 Gemini 모델 | ⛔ |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | 이메일 전송 계정 | ⛔ |
-| `SENTRY_DSN` | 서버/클라이언트 에러 모니터링 | ⛔ |
 | `PORT`, `HTTPS_PORT`, `SSL_KEY_PATH`, `SSL_CERT_PATH` | 서버 포트 및 HTTPS 인증서 | ⛔ |
 | `EXPO_OWNER`, `EXPO_SLUG` | Expo Auth Session용 URL 조합 | ⛔ |
 
@@ -120,7 +119,7 @@ npx expo start --ios
 - **Firebase 인덱스**: `Backend/scripts/createIndexes.js`로 추천/검색 인덱스를 한 번에 생성할 수 있습니다.
 - **데이터 안전 장치**: Firebase 자격 증명이 비어 있으면 인메모리 모드로 전환되며, 재시작 시 데이터가 삭제됩니다. 콘솔 경고를 확인하세요.
 - **API 문서화**: `routes/*Routes.js` + `controllers/*Controller.js`를 함께 보면 엔드포인트, 권한 체크, 레이트 리미터 정책을 파악할 수 있습니다.
-- **품질 및 모니터링**: `middleware/errorMiddleware.js`가 Sentry와 연계되어 있으므로 DSN을 활성화하면 클라이언트/서버 모두 추적이 가능합니다.
+- **품질 및 모니터링**: `middleware/errorMiddleware.js`를 확장해 Logtail, CloudWatch 등 원하는 로깅 파이프라인에 연결할 수 있습니다.
 - **확장 방향**: `models/` 이하 Sequelize 정의는 향후 MySQL 마이그레이션을 위해 존재하므로, `config/database.js`를 추가하면 바로 관계형 DB로 이관할 수 있습니다.
 
 ## 기여 & 라이선스

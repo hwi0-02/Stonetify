@@ -91,13 +91,6 @@ module.exports = ({ config }) => {
       },
       plugins: [
         'expo-audio',
-        [
-          'sentry-expo',
-          {
-            organization: '__CHANGE_ME_OPTIONAL__',
-            project: 'stonetify'
-          }
-        ],
         'expo-web-browser'
       ],
       extra: {
