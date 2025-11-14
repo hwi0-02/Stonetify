@@ -3,6 +3,41 @@
 import apiService from '../../Frontend/services/apiService';
 import store from '../../Frontend/store/store';
 import { refreshSpotifyToken } from '../../Frontend/store/slices/spotifySlice';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// AsyncStorage key for last used device
+const LAST_DEVICE_KEY = '@stonetify_last_playback_device';
+
+// Helper functions for device persistence
+async function getLastUsedDevice(userId) {
+  try {
+    const key = `${LAST_DEVICE_KEY}:${userId}`;
+    const deviceData = await AsyncStorage.getItem(key);
+    if (deviceData) {
+      const device = JSON.parse(deviceData);
+      console.log('📱 [DevicePersistence] Retrieved last used device:', device);
+      return device;
+    }
+  } catch (error) {
+    console.warn('⚠️ [DevicePersistence] Failed to retrieve last device:', error.message);
+  }
+  return null;
+}
+
+async function saveLastUsedDevice(userId, deviceId, deviceName) {
+  try {
+    const key = `${LAST_DEVICE_KEY}:${userId}`;
+    const deviceData = {
+      id: deviceId,
+      name: deviceName,
+      timestamp: Date.now()
+    };
+    await AsyncStorage.setItem(key, JSON.stringify(deviceData));
+    console.log('💾 [DevicePersistence] Saved last used device:', deviceData);
+  } catch (error) {
+    console.warn('⚠️ [DevicePersistence] Failed to save last device:', error.message);
+  }
+}
 
 class RestRemoteAdapter {
   constructor(userId) {
@@ -13,6 +48,7 @@ class RestRemoteAdapter {
     this._suspended = false;
     this.retryCount = 0;
     this.maxRetries = 1; // Only retry once for token refresh
+    this.lastUsedDeviceId = null;
   }
   async connect() {
     // no-op: backend handles token refresh
@@ -48,6 +84,7 @@ class RestRemoteAdapter {
   async load(track, autoPlay = true, options = {}) {
     this.currentTrack = track;
     let deviceId = options?.deviceId || null;
+    let selectedDeviceName = null;
 
     // Extract Spotify ID (prioritize spotify_id over id to avoid Firebase IDs)
     const spotifyId = track.spotify_id || track.spotifyId || (track.id && !track.id.startsWith('-') ? track.id : null);
@@ -72,11 +109,29 @@ class RestRemoteAdapter {
         const devices = devicesData?.devices || [];
 
         if (devices.length > 0) {
-          // 우선순위: 1. 활성 모바일 2. 모바일 3. 활성 디바이스 4. 첫 번째 디바이스
+          // 우선순위: 1. 마지막으로 사용한 기기 2. 활성 모바일 3. 모바일 4. 활성 디바이스 5. 첫 번째 디바이스
           let selectedDevice = null;
 
+          // 0. 마지막으로 사용한 기기 확인
+          const lastDevice = await getLastUsedDevice(this.userId);
+          if (lastDevice?.id) {
+            selectedDevice = devices.find(d => d.id === lastDevice.id);
+            if (selectedDevice) {
+              console.log('🎯 [RestRemoteAdapter] Using last used device:', {
+                name: selectedDevice.name,
+                type: selectedDevice.type,
+                isActive: selectedDevice.is_active,
+                id: selectedDevice.id
+              });
+            } else {
+              console.log('⚠️ [RestRemoteAdapter] Last used device not available, selecting new device');
+            }
+          }
+
           // 1. 활성 상태의 모바일 디바이스 찾기
-          selectedDevice = devices.find(d => d.is_active && d.type === 'Smartphone');
+          if (!selectedDevice) {
+            selectedDevice = devices.find(d => d.is_active && d.type === 'Smartphone');
+          }
 
           // 2. 활성이 아니더라도 모바일 디바이스 찾기
           if (!selectedDevice) {
@@ -95,7 +150,8 @@ class RestRemoteAdapter {
 
           if (selectedDevice) {
             deviceId = selectedDevice.id;
-            console.log('✅ [RestRemoteAdapter] Auto-selected device:', {
+            selectedDeviceName = selectedDevice.name;
+            console.log('✅ [RestRemoteAdapter] Selected device:', {
               name: selectedDevice.name,
               type: selectedDevice.type,
               isActive: selectedDevice.is_active,
@@ -139,6 +195,19 @@ class RestRemoteAdapter {
       await apiService.playRemote({ userId: this.userId, uris, device_id: deviceId });
       if (!autoPlay) await apiService.pauseRemote(this.userId);
       this._startPolling();
+
+      // 재생 성공 시 사용된 기기 저장
+      if (deviceId) {
+        this.lastUsedDeviceId = deviceId;
+        await saveLastUsedDevice(this.userId, deviceId, selectedDeviceName);
+
+        // Redux 상태에도 저장
+        const playerSlice = await import('../../Frontend/store/slices/playerSlice');
+        store.dispatch(playerSlice.setPlaybackDeviceInfo({
+          id: deviceId,
+          name: selectedDeviceName
+        }));
+      }
     };
 
     try {

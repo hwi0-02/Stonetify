@@ -521,6 +521,8 @@ export const persistPlaybackState = createAsyncThunk(
         position: player.position,
         repeatMode: player.repeatMode,
         isShuffle: player.isShuffle,
+        playbackDeviceId: player.playbackDeviceId,
+        playbackDeviceName: player.playbackDeviceName,
         timestamp: Date.now(),
       };
       await AsyncStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -557,6 +559,8 @@ export const restorePlaybackState = createAsyncThunk(
         position: data.position || 0,
         repeatMode: data.repeatMode || 'off',
         isShuffle: !!data.isShuffle,
+        playbackDeviceId: data.playbackDeviceId || null,
+        playbackDeviceName: data.playbackDeviceName || null,
       }));
     } catch (e) {
       console.warn('Restore playback failed', e);
@@ -595,13 +599,15 @@ const playerSlice = createSlice({
     updatePosition: (state, action) => { state.position = action.payload; },
     updateDuration: (state, action) => { state.duration = action.payload; },
     restoreState: (state, action) => {
-      const { queue, queueIndex, position, repeatMode, isShuffle } = action.payload;
+      const { queue, queueIndex, position, repeatMode, isShuffle, playbackDeviceId, playbackDeviceName } = action.payload;
       state.queue = queue;
       state.queueIndex = queueIndex;
       state.currentTrack = queue[queueIndex] || null;
       state.position = position;
       state.repeatMode = repeatMode;
       state.isShuffle = isShuffle;
+      state.playbackDeviceId = playbackDeviceId || null;
+      state.playbackDeviceName = playbackDeviceName || null;
       state.status = 'paused';
     },
     replaceQueue: (state, action) => {
